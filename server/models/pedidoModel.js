@@ -1,0 +1,31 @@
+export function mapPedidoRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    numero: row.numero,
+    orcamentoId: row.orcamentoId,
+    nomeCliente: row.nomeCliente,
+    telefone: row.telefone,
+    produto: row.produto,
+    quantidade: row.quantidade,
+    modelo: row.modelo,
+    cores: row.cores,
+    personalizacao: row.personalizacao,
+    configuracao: row.configuracao,
+    prazo: row.prazo,
+    valorTotal: row.valorTotal,
+    valorSinal: row.valorSinal,
+    valorPago: row.valorPago,
+    custo: row.custo,
+    lucro: row.lucro,
+    status: row.status,
+    tipoPagamento: row.tipoPagamento,
+    chavePix: row.chavePix,
+    nomeRecebedor: row.nomeRecebedor,
+    tipoEntrega: row.tipoEntrega,
+    observacoesEntrega: row.observacoesEntrega,
+    observacoes: row.observacoes,
+    dataCriacao: row.dataCriacao,
+    dataAtualizacao: row.dataAtualizacao,
+  };
+}

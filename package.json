@@ -1,0 +1,10 @@
+{
+  "name": "aurea-studio-gestao",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Gestão de orçamentos e pedidos — deploy único no Render",
+  "scripts": {
+    "build": "npm run build --prefix client",
+    "start": "npm start --prefix server"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "aurea-studio-server",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "aurea-studio-gestao": "file:..",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "sql.js": "^1.11.0"
+  }
+}
