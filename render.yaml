@@ -1,5 +1,5 @@
-# Blueprint opcional para o Render: New → Blueprint → ligar este repositório.
-# Ajuste o nome do serviço se quiser.
+# Render Blueprint — New → Blueprint → conectar o repositório GitHub.
+# Documentação: https://render.com/docs/blueprint-spec
 
 services:
   - type: web
@@ -11,5 +11,12 @@ services:
     startCommand: NODE_ENV=production npm start --prefix server
     healthCheckPath: /api/health
     envVars:
+      # Obrigatório para o Express servir o build do React (client/dist)
       - key: NODE_ENV
         value: production
+      # Opcional: pasta da base SQLite (use com Disco Render montado neste caminho)
+      # - key: DATA_DIR
+      #   value: /data
+      # Opcional: CORS restrito (URL exata do front, só se front ≠ este serviço)
+      # - key: CORS_ORIGIN
+      #   value: https://aurea-studio.onrender.com

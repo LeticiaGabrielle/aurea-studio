@@ -89,35 +89,84 @@ Abra `http://localhost:3001` — o Express entrega o build estático do React e 
 - `PATCH` `/api/pedidos/:id/registro-pagamento` — corpo `{ "registroPagamento": "A_COBRAR" | "PAGO_50" | "PAGO_100" }`
 - `GET` `/api/dashboard` — totais do painel
 
-## Deploy no Render
+## Deploy no Render (guia completo)
 
-### Opção A — Blueprint (ficheiro `render.yaml` na raiz)
+Um único **Web Service** serve a API e o React compilado. O browser usa URLs **relativas** (`/api/...`) — **não** precisa de `VITE_API_URL` neste modo.
 
-1. No [Render](https://render.com): **New** → **Blueprint**.
-2. Ligue o repositório GitHub; o Render lê `render.yaml` e cria o **Web Service**.
-3. Confirme **Build** e **Start** (já definidos no ficheiro). O **health check** usa `GET /api/health`.
+### Variáveis de ambiente no painel Render
+
+| Variável | Obrigatória? | Valor recomendado | Notas |
+|----------|----------------|-------------------|--------|
+| `NODE_ENV` | Sim | `production` | Sem isto o Express **não** envia o ficheiros estáticos do React. |
+| `PORT` | Não mexer | *(Render preenche)* | O Render injeta a porta; o `server` já usa `process.env.PORT`. |
+| `VITE_API_URL` | Não | *(vazio / não criar)* | Só para monólito: o build do Vite fica com `""` e o `fetch` usa o mesmo host. |
+| `DATA_DIR` ou `SQLITE_PATH` | Opcional | ex. `/data` | Com **Persistent Disk** montado; ver abaixo. |
+| `CORS_ORIGIN` | Opcional | URL do site | Só se o front estiver noutro domínio; no deploy único pode omitir. |
+
+**Onde configurar:** no Render → o teu serviço → **Environment** → *Add Environment Variable*.
+
+### Opção A — Blueprint (`render.yaml`)
+
+1. [render.com](https://render.com) → **New** → **Blueprint**.
+2. Conecta o repositório GitHub (ex. `LeticiaGabrielle/aurea-studio`).
+3. O Render propõe o serviço `aurea-studio`; confirma **Apply**.
+4. Garante que existe `NODE_ENV` = `production` (já vem no `render.yaml`).
+5. Espera o **deploy** ficar verde; abre o URL `https://<nome>-<hash>.onrender.com`.
 
 ### Opção B — Web Service manual
 
-1. **New** → **Web Service** → escolha o repositório.
-2. **Root directory:** raiz do projeto (`.`).
-3. **Build command:**
+1. **New** → **Web Service** → escolhe o repo.
+2. **Name:** à tua escolha.
+3. **Region:** ex. Oregon (ou mais perto dos utilizadores).
+4. **Branch:** `main` (ou a que usas).
+5. **Root directory:** `.` (raiz do repo).
+6. **Runtime:** Node.
+7. **Build command:**
 
    ```bash
    npm install --prefix server && npm install --prefix client && npm run build --prefix client
    ```
 
-4. **Start command:**
+8. **Start command:**
 
    ```bash
    NODE_ENV=production npm start --prefix server
    ```
 
-5. O Render define `PORT`; o servidor escuta nessa porta e serve `client/dist` em produção. **Não** defina `VITE_API_URL` se front e API forem o mesmo URL (produção única).
+9. **Health check path:** `/api/health`
+10. Em **Environment**, adiciona `NODE_ENV` = `production` (se não estiver).
+11. **Create Web Service**.
 
-### Persistência SQLite
+### Depois do primeiro deploy
 
-O disco do serviço no Render é **efémero**: redeploys podem apagar a base. Para dados persistentes, use um [Render Disk](https://render.com/docs/disks) e defina `SQLITE_PATH` (ou `DATA_DIR`) para um caminho dentro do volume montado.
+- **Auto Deploy:** Settings → *Auto-Deploy* → **Yes** (deploy a cada push na branch).
+- O primeiro arranque no plano gratuito pode demorar (~1 min) após inatividade (*cold start*).
+
+### Persistência SQLite (dados que não se perdem no redeploy)
+
+No plano gratuito o sistema de ficheiros do contentor é **efémero**: cada deploy pode apagar `app.db`.
+
+1. No serviço → **Disks** → **Add Disk** (plano pago ou conforme a tua conta Render).
+2. Monta por exemplo em **`/data`**.
+3. Em **Environment** adiciona:
+
+   - `DATA_DIR` = `/data`
+
+   (o servidor grava `app.db` dentro de `DATA_DIR`; ver `server/db.js`.)
+
+Alternativa: `SQLITE_PATH` = `/data/app.db` (caminho completo do ficheiro).
+
+Documentação: [Render Disks](https://render.com/docs/disks).
+
+### Erro de build `Exited with status 127` ou `vite: not found`
+
+Em muitos hosts (ex. Vercel), o `npm install` em produção **não instala** `devDependencies`. O script `vite build` precisa do pacote `vite`, que estava em `devDependencies` — daí o comando não existir (**127**).
+
+Neste projeto, **Vite e ferramentas de build do client estão em `dependencies`**, para o build funcionar com `NODE_ENV=production`.
+
+Também foi removida a dependência inválida `file:..` do `client/package.json` (quebrava instalações em CI).
+
+**Nota:** Este sistema completo (API + SQLite + React) combina com **um Web Service no Render** (ou similar). Se publicares **só** o front noutro serviço, tens de definir `VITE_API_URL` para a URL da API e esse serviço não servirá `/api` sozinho.
 
 ### Migração futura para PostgreSQL
 
