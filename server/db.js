@@ -125,11 +125,24 @@ export async function init() {
       tipoEntrega TEXT NOT NULL DEFAULT '',
       observacoesEntrega TEXT NOT NULL DEFAULT '',
       observacoes TEXT NOT NULL DEFAULT '',
+      registroPagamento TEXT NOT NULL DEFAULT 'A_COBRAR',
       dataCriacao TEXT NOT NULL,
       dataAtualizacao TEXT NOT NULL
     );
   `);
+  migratePedidosRegistroPagamento();
   persist();
+}
+
+/** Bases antigas sem a coluna de controlo interno de cobrança. */
+function migratePedidosRegistroPagamento() {
+  const cols = db.prepare("PRAGMA table_info(pedidos)").all();
+  const has = cols.some((c) => c.name === "registroPagamento");
+  if (!has) {
+    db.prepare(
+      "ALTER TABLE pedidos ADD COLUMN registroPagamento TEXT NOT NULL DEFAULT 'A_COBRAR'"
+    ).run();
+  }
 }
 
 export function nextNumber(prefix, key) {

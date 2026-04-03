@@ -60,7 +60,9 @@ export default function PedidosList() {
     <div>
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-slate-900">Pedidos</h1>
-        <p className="text-slate-600">Altere o status rapidamente ou abra o pedido para editar tudo</p>
+        <p className="text-slate-600">
+          Use o <strong>status</strong> do pedido (Pendente, Sinal pago, Pago, etc.) para acompanhar o fluxo e o pagamento.
+        </p>
       </div>
 
       <form onSubmit={onSearch} className="mb-6 flex flex-wrap gap-3">
@@ -100,7 +102,7 @@ export default function PedidosList() {
         <p className="text-slate-500">Nenhum pedido encontrado.</p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full min-w-[900px] text-left text-sm">
+          <table className="w-full min-w-[880px] text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
                 <th className="px-4 py-3">Número</th>

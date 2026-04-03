@@ -16,6 +16,7 @@ import {
   getPedido,
   updatePedido,
   patchPedidoStatus,
+  patchPedidoRegistroPagamento,
   deletePedido,
 } from "./controllers/pedidoController.js";
 import { getDashboard } from "./controllers/dashboardController.js";
@@ -49,6 +50,7 @@ app.get("/api/pedidos", listPedidos);
 app.get("/api/pedidos/:id", getPedido);
 app.put("/api/pedidos/:id", updatePedido);
 app.patch("/api/pedidos/:id/status", patchPedidoStatus);
+app.patch("/api/pedidos/:id/registro-pagamento", patchPedidoRegistroPagamento);
 app.delete("/api/pedidos/:id", deletePedido);
 
 app.get("/api/dashboard", getDashboard);

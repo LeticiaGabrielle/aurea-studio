@@ -144,7 +144,7 @@ export default function OrcamentosList() {
                   <td className="px-4 py-3 text-slate-600">{formatDate(o.dataCriacao)}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex flex-wrap justify-end gap-2">
-                      {o.status === "APROVADO" && (
+                      {o.status === "APROVADO" && !o.possuiPedido && (
                         <button
                           type="button"
                           disabled={busyId === o.id}
@@ -153,6 +153,11 @@ export default function OrcamentosList() {
                         >
                           {busyId === o.id ? "…" : "Converter em pedido"}
                         </button>
+                      )}
+                      {o.status === "APROVADO" && o.possuiPedido && (
+                        <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-800">
+                          Já tem pedido
+                        </span>
                       )}
                       {o.status === "APROVADO" ? (
                         <span className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-400">

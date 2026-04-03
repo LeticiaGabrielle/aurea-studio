@@ -18,5 +18,11 @@ export function mapOrcamentoRow(row) {
     observacoes: row.observacoes,
     dataCriacao: row.dataCriacao,
     status: row.status,
+    ...(row.possuiPedido !== undefined && row.possuiPedido !== null
+      ? {
+          possuiPedido:
+            Number(row.possuiPedido) === 1 || row.possuiPedido === true,
+        }
+      : {}),
   };
 }

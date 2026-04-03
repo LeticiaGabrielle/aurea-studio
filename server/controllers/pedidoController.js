@@ -3,6 +3,9 @@ import { mapPedidoRow } from "../models/pedidoModel.js";
 
 const ALLOWED_STATUS = ["PENDENTE", "SINAL_PAGO", "PAGO", "FINALIZADO", "CANCELADO"];
 
+/** Controlo interno (não vai para o PDF do orçamento). */
+export const ALLOWED_REGISTRO_PAGAMENTO = ["A_COBRAR", "PAGO_50", "PAGO_100"];
+
 export function listPedidos(req, res) {
   try {
     const { status, search } = req.query;
@@ -70,7 +73,15 @@ export function updatePedido(req, res) {
       tipoEntrega: body.tipoEntrega !== undefined ? body.tipoEntrega : existing.tipoEntrega,
       observacoesEntrega: body.observacoesEntrega !== undefined ? body.observacoesEntrega : existing.observacoesEntrega,
       observacoes: body.observacoes !== undefined ? body.observacoes : existing.observacoes,
+      registroPagamento:
+        body.registroPagamento !== undefined
+          ? body.registroPagamento
+          : existing.registroPagamento ?? "A_COBRAR",
     };
+
+    if (!ALLOWED_REGISTRO_PAGAMENTO.includes(merged.registroPagamento)) {
+      return res.status(400).json({ error: "registroPagamento inválido" });
+    }
 
     const q = Number(merged.quantidade);
     if (q <= 0) return res.status(400).json({ error: "quantidade deve ser maior que 0" });
@@ -87,7 +98,7 @@ export function updatePedido(req, res) {
         personalizacao = ?, configuracao = ?, prazo = ?, valorTotal = ?, valorSinal = ?,
         valorPago = ?, custo = ?, lucro = ?, status = ?, tipoPagamento = ?, chavePix = ?,
         nomeRecebedor = ?, tipoEntrega = ?, observacoesEntrega = ?, observacoes = ?,
-        dataAtualizacao = ?
+        registroPagamento = ?, dataAtualizacao = ?
       WHERE id = ?
     `).run(
       String(merged.nomeCliente || "").trim(),
@@ -111,6 +122,7 @@ export function updatePedido(req, res) {
       String(merged.tipoEntrega || "").trim(),
       String(merged.observacoesEntrega || "").trim(),
       String(merged.observacoes || "").trim(),
+      merged.registroPagamento,
       now,
       id
     );
@@ -135,6 +147,31 @@ export function patchPedidoStatus(req, res) {
     }
     const now = new Date().toISOString();
     db.prepare("UPDATE pedidos SET status = ?, dataAtualizacao = ? WHERE id = ?").run(status, now, id);
+    const row = db.prepare("SELECT * FROM pedidos WHERE id = ?").get(id);
+    res.json(mapPedidoRow(row));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+export function patchPedidoRegistroPagamento(req, res) {
+  try {
+    const id = req.params.id;
+    const existing = db.prepare("SELECT * FROM pedidos WHERE id = ?").get(id);
+    if (!existing) return res.status(404).json({ error: "Pedido não encontrado" });
+    if (existing.status === "CANCELADO") {
+      return res.status(400).json({ error: "Pedido cancelado não pode ser alterado" });
+    }
+    const { registroPagamento } = req.body || {};
+    if (!registroPagamento || !ALLOWED_REGISTRO_PAGAMENTO.includes(registroPagamento)) {
+      return res.status(400).json({ error: "registroPagamento inválido" });
+    }
+    const now = new Date().toISOString();
+    db.prepare("UPDATE pedidos SET registroPagamento = ?, dataAtualizacao = ? WHERE id = ?").run(
+      registroPagamento,
+      now,
+      id
+    );
     const row = db.prepare("SELECT * FROM pedidos WHERE id = ?").get(id);
     res.json(mapPedidoRow(row));
   } catch (e) {

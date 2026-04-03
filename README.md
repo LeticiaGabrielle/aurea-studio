@@ -78,29 +78,42 @@ Abra `http://localhost:3001` — o Express entrega o build estático do React e 
 
 ## API REST
 
-- `GET/POST` `/api/orcamentos` — listar (query: `status`, `search`) / criar
+- `GET/POST` `/api/orcamentos` — listar (query: `status`, `search`) / criar  
+  - Cada item pode incluir `possuiPedido` (boolean): se já existe pedido ligado ao orçamento.
 - `GET/PUT/DELETE` `/api/orcamentos/:id`
-- `POST` `/api/orcamentos/:id/converter-pedido` — só se status `APROVADO`
+- `POST` `/api/orcamentos/:id/converter-pedido` — só se status `APROVADO` e ainda **sem** pedido (reserva; ao aprovar no formulário o pedido é criado sozinho — ver regras abaixo).
+- Ao **criar** ou **atualizar** orçamento com status `APROVADO`, o servidor **cria o pedido automaticamente** se ainda não existir. A resposta pode incluir `pedidoCriadoAutomaticamente` (objeto do pedido) **apenas nessa criação automática**.
 - `GET/PUT/DELETE` `/api/pedidos/:id`
+- `PUT` `/api/pedidos/:id` — corpo pode incluir `registroPagamento`: `A_COBRAR` | `PAGO_50` | `PAGO_100` (controlo interno de cobrança; **não** entra no PDF do orçamento).
 - `PATCH` `/api/pedidos/:id/status` — corpo `{ "status": "..." }`
+- `PATCH` `/api/pedidos/:id/registro-pagamento` — corpo `{ "registroPagamento": "A_COBRAR" | "PAGO_50" | "PAGO_100" }`
 - `GET` `/api/dashboard` — totais do painel
 
 ## Deploy no Render
 
-1. Crie um **Web Service** ligado ao repositório.
-2. **Build command:**
+### Opção A — Blueprint (ficheiro `render.yaml` na raiz)
+
+1. No [Render](https://render.com): **New** → **Blueprint**.
+2. Ligue o repositório GitHub; o Render lê `render.yaml` e cria o **Web Service**.
+3. Confirme **Build** e **Start** (já definidos no ficheiro). O **health check** usa `GET /api/health`.
+
+### Opção B — Web Service manual
+
+1. **New** → **Web Service** → escolha o repositório.
+2. **Root directory:** raiz do projeto (`.`).
+3. **Build command:**
 
    ```bash
    npm install --prefix server && npm install --prefix client && npm run build --prefix client
    ```
 
-3. **Start command:**
+4. **Start command:**
 
    ```bash
    NODE_ENV=production npm start --prefix server
    ```
 
-4. O Render define `PORT`; o servidor escuta nessa porta e serve `client/dist` em produção.
+5. O Render define `PORT`; o servidor escuta nessa porta e serve `client/dist` em produção. **Não** defina `VITE_API_URL` se front e API forem o mesmo URL (produção única).
 
 ### Persistência SQLite
 
@@ -113,8 +126,10 @@ O disco do serviço no Render é **efémero**: redeploys podem apagar a base. Pa
 
 ## Regras de negócio (resumo)
 
-- Orçamento **APROVADO** não pode ser editado; pode ser convertido em **um** pedido.
+- Ao **guardar** um orçamento com status **APROVADO** (criação ou edição), o sistema **gera o pedido automaticamente** (um pedido por orçamento). Assim o pedido passa a aparecer na lista e no dashboard sem precisar clicar em «Converter em pedido» (esse botão só aparece se, por algum motivo, ainda não existir pedido).
+- Orçamento **APROVADO** não pode ser editado depois de aprovado.
 - Pedido **CANCELADO** não pode ser editado.
+- No **pedido**, o campo **`registroPagamento`** (`A_COBRAR`, `PAGO_50`, `PAGO_100`) serve só para controlo interno (saber se falta cobrar, se já recebeu o sinal ou o total). **Não** é mostrado no PDF do orçamento.
 - `valorTotal = quantidade × valorUnitario`, `valorSinal = 50%` do total (orçamento e recalculado no pedido ao atualizar `valorTotal`).
 - `lucro = valorTotal - custo` no pedido.
 

@@ -1,24 +1,29 @@
 import { db, nextNumber, calcOrcamentoRow } from "../db.js";
 import { mapOrcamentoRow } from "../models/orcamentoModel.js";
-import { mapPedidoRow } from "../models/pedidoModel.js";
+import { garantirPedidoParaOrcamentoAprovado } from "../services/pedidoFromOrcamento.js";
 
 const ALLOWED_STATUS = ["RASCUNHO", "ENVIADO", "APROVADO", "RECUSADO"];
+
+const ORC_SELECT = `
+  SELECT o.*, CASE WHEN EXISTS (SELECT 1 FROM pedidos p WHERE p.orcamentoId = o.id) THEN 1 ELSE 0 END AS possuiPedido
+  FROM orcamentos o
+`;
 
 export function listOrcamentos(req, res) {
   try {
     const { status, search } = req.query;
-    let sql = "SELECT * FROM orcamentos WHERE 1=1";
+    let sql = `${ORC_SELECT} WHERE 1=1`;
     const params = [];
     if (status && ALLOWED_STATUS.includes(status)) {
-      sql += " AND status = ?";
+      sql += " AND o.status = ?";
       params.push(status);
     }
     if (search && String(search).trim()) {
-      sql += " AND (nomeCliente LIKE ? OR telefone LIKE ? OR produto LIKE ? OR numero LIKE ?)";
+      sql += " AND (o.nomeCliente LIKE ? OR o.telefone LIKE ? OR o.produto LIKE ? OR o.numero LIKE ?)";
       const q = `%${String(search).trim()}%`;
       params.push(q, q, q, q);
     }
-    sql += " ORDER BY id DESC";
+    sql += " ORDER BY o.id DESC";
     const rows = db.prepare(sql).all(...params);
     res.json(rows.map(mapOrcamentoRow));
   } catch (e) {
@@ -28,7 +33,7 @@ export function listOrcamentos(req, res) {
 
 export function getOrcamento(req, res) {
   try {
-    const row = db.prepare("SELECT * FROM orcamentos WHERE id = ?").get(req.params.id);
+    const row = db.prepare(`${ORC_SELECT} WHERE o.id = ?`).get(req.params.id);
     const o = mapOrcamentoRow(row);
     if (!o) return res.status(404).json({ error: "Orçamento não encontrado" });
     res.json(o);
@@ -92,8 +97,14 @@ export function createOrcamento(req, res) {
       now,
       status
     );
-    const row = db.prepare("SELECT * FROM orcamentos WHERE id = ?").get(info.lastInsertRowid);
-    res.status(201).json(mapOrcamentoRow(row));
+    const newId = info.lastInsertRowid;
+    const { criado, pedido } = garantirPedidoParaOrcamentoAprovado(newId);
+    const row = db.prepare(`${ORC_SELECT} WHERE o.id = ?`).get(newId);
+    const out = mapOrcamentoRow(row);
+    if (criado && pedido) {
+      out.pedidoCriadoAutomaticamente = pedido;
+    }
+    res.status(201).json(out);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -166,8 +177,14 @@ export function updateOrcamento(req, res) {
       merged.status,
       id
     );
-    const row = db.prepare("SELECT * FROM orcamentos WHERE id = ?").get(id);
-    res.json(mapOrcamentoRow(row));
+
+    const { criado, pedido } = garantirPedidoParaOrcamentoAprovado(id);
+    const row = db.prepare(`${ORC_SELECT} WHERE o.id = ?`).get(id);
+    const out = mapOrcamentoRow(row);
+    if (criado && pedido) {
+      out.pedidoCriadoAutomaticamente = pedido;
+    }
+    res.json(out);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -197,55 +214,11 @@ export function converterEmPedido(req, res) {
     if (o.status !== "APROVADO") {
       return res.status(400).json({ error: "Apenas orçamentos aprovados podem virar pedido" });
     }
-    const exists = db.prepare("SELECT id FROM pedidos WHERE orcamentoId = ?").get(id);
-    if (exists) {
-      return res.status(400).json({ error: "Já existe pedido para este orçamento" });
+    const { criado, pedido } = garantirPedidoParaOrcamentoAprovado(id);
+    if (!pedido) {
+      return res.status(500).json({ error: "Não foi possível criar o pedido" });
     }
-
-    const numero = nextNumber("PED", "pedido");
-    const now = new Date().toISOString();
-    const valorTotal = o.valorTotal;
-    const valorSinal = o.valorSinal;
-    const custo = 0;
-    const lucro = Math.round((valorTotal - custo) * 100) / 100;
-
-    const stmt = db.prepare(`
-      INSERT INTO pedidos (
-        numero, orcamentoId, nomeCliente, telefone, produto, quantidade, modelo, cores,
-        personalizacao, configuracao, prazo, valorTotal, valorSinal, valorPago, custo, lucro,
-        status, tipoPagamento, chavePix, nomeRecebedor, tipoEntrega, observacoesEntrega,
-        observacoes, dataCriacao, dataAtualizacao
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    `);
-    const info = stmt.run(
-      numero,
-      id,
-      o.nomeCliente,
-      o.telefone,
-      o.produto,
-      o.quantidade,
-      o.modelo,
-      o.cores,
-      o.personalizacao,
-      o.configuracao,
-      o.prazo,
-      valorTotal,
-      valorSinal,
-      0,
-      custo,
-      lucro,
-      "PENDENTE",
-      "",
-      "",
-      "",
-      "",
-      "",
-      o.observacoes,
-      now,
-      now
-    );
-    const row = db.prepare("SELECT * FROM pedidos WHERE id = ?").get(info.lastInsertRowid);
-    res.status(201).json(mapPedidoRow(row));
+    res.status(criado ? 201 : 200).json(pedido);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

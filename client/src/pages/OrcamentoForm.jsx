@@ -39,14 +39,29 @@ export default function OrcamentoForm() {
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  const [notice, setNotice] = useState("");
+  const [possuiPedido, setPossuiPedido] = useState(false);
+  /** Status que veio do servidor ao abrir o formulário — não o valor atual do dropdown. */
+  const [initialStatus, setInitialStatus] = useState(null);
+
+  const bloqueadoPorJaAprovado = isEdit && initialStatus === "APROVADO";
 
   useEffect(() => {
-    if (!id) return;
+    if (!id) {
+      setInitialStatus(null);
+      return;
+    }
     api
       .get(`/api/orcamentos/${id}`)
       .then((o) => {
+        setInitialStatus(o.status);
+        setPossuiPedido(Boolean(o.possuiPedido));
         if (o.status === "APROVADO") {
-          setErr("Orçamento aprovado não pode ser editado.");
+          setNotice(
+            "Este orçamento já está aprovado e não pode ser alterado. O pedido foi criado automaticamente — em Pedidos use o status (Sinal pago, Pago, etc.) para acompanhar o pagamento."
+          );
+        } else {
+          setNotice("");
         }
         setMeta({ numero: o.numero, dataCriacao: o.dataCriacao });
         setForm({
@@ -95,8 +110,22 @@ export default function OrcamentoForm() {
     return "";
   };
 
-  const save = async (e) => {
-    e.preventDefault();
+  const buildPayload = (statusOverride) => ({
+    nomeCliente: form.nomeCliente,
+    telefone: form.telefone,
+    produto: form.produto,
+    quantidade: Number(form.quantidade),
+    modelo: form.modelo,
+    cores: form.cores,
+    personalizacao: form.personalizacao,
+    configuracao: form.configuracao,
+    prazo: form.prazo,
+    valorUnitario: Number(form.valorUnitario),
+    observacoes: form.observacoes,
+    status: statusOverride ?? form.status,
+  });
+
+  const submitOrcamento = async (statusOverride) => {
     const v = validate();
     if (v) {
       alert(v);
@@ -104,25 +133,21 @@ export default function OrcamentoForm() {
     }
     setSaving(true);
     setErr("");
-    const payload = {
-      nomeCliente: form.nomeCliente,
-      telefone: form.telefone,
-      produto: form.produto,
-      quantidade: Number(form.quantidade),
-      modelo: form.modelo,
-      cores: form.cores,
-      personalizacao: form.personalizacao,
-      configuracao: form.configuracao,
-      prazo: form.prazo,
-      valorUnitario: Number(form.valorUnitario),
-      observacoes: form.observacoes,
-      status: form.status,
-    };
+    const payload = buildPayload(statusOverride);
     try {
+      let data;
       if (isEdit) {
-        await api.put(`/api/orcamentos/${id}`, payload);
+        data = await api.put(`/api/orcamentos/${id}`, payload);
       } else {
-        await api.post("/api/orcamentos", payload);
+        data = await api.post("/api/orcamentos", payload);
+      }
+      if (data?.pedidoCriadoAutomaticamente) {
+        const p = data.pedidoCriadoAutomaticamente;
+        alert(
+          `Pedido ${p.numero} criado.\n\nEm Pedidos, atualize o status (ex.: Sinal pago, Pago) conforme o cliente for pagando.`
+        );
+        navigate("/pedidos");
+        return;
       }
       navigate("/orcamentos");
     } catch (e) {
@@ -130,6 +155,15 @@ export default function OrcamentoForm() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const save = (e) => {
+    e.preventDefault();
+    submitOrcamento(undefined);
+  };
+
+  const aprovarECriarPedido = () => {
+    submitOrcamento("APROVADO");
   };
 
   const gerarPdf = () => {
@@ -157,7 +191,29 @@ export default function OrcamentoForm() {
         <h1 className="mt-2 text-2xl font-bold text-slate-900">
           {isEdit ? "Editar orçamento" : "Novo orçamento"}
         </h1>
+        <p className="mt-2 max-w-2xl text-sm text-slate-600">
+          <strong>Aprovar</strong> é aqui no <strong>orçamento</strong> (não no pedido): escolha o status{" "}
+          <strong>Aprovado</strong> e salve, ou use o botão verde abaixo. O sistema cria o{" "}
+          <strong>pedido</strong> sozinho. O acompanhamento do pagamento fica no menu <strong>Pedidos</strong>, pelo{" "}
+          <strong>status</strong> do pedido — não nesta página e não nos campos «só para o PDF».
+        </p>
       </div>
+
+      {notice && (
+        <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
+          {notice}
+          {possuiPedido ? (
+            <div className="mt-3">
+              <Link
+                to="/pedidos"
+                className="inline-flex rounded-lg bg-aurea-navy px-3 py-2 text-sm font-medium text-white hover:opacity-90"
+              >
+                Ir para Pedidos
+              </Link>
+            </div>
+          ) : null}
+        </div>
+      )}
 
       {err && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-800">{err}</div>
@@ -170,7 +226,7 @@ export default function OrcamentoForm() {
               <span className="text-sm font-medium text-slate-700">Nome do cliente *</span>
               <input
                 required
-                disabled={isEdit && form.status === "APROVADO"}
+                disabled={bloqueadoPorJaAprovado}
                 value={form.nomeCliente}
                 onChange={(e) => set("nomeCliente", e.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
@@ -179,30 +235,34 @@ export default function OrcamentoForm() {
             <label className="block">
               <span className="text-sm font-medium text-slate-700">Telefone</span>
               <input
-                disabled={isEdit && form.status === "APROVADO"}
+                disabled={bloqueadoPorJaAprovado}
                 value={form.telefone}
                 onChange={(e) => set("telefone", e.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
               />
             </label>
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">Status</span>
+            <label className="block sm:col-span-2">
+              <span className="text-sm font-medium text-slate-700">Status do orçamento</span>
+              <p className="mt-0.5 text-xs text-slate-500">
+                «Aprovado» + Salvar cria o pedido automaticamente. Pedidos usam outro status (Pendente, Pago…).
+              </p>
               <select
-                disabled={isEdit && form.status === "APROVADO"}
+                disabled={bloqueadoPorJaAprovado}
                 value={form.status}
                 onChange={(e) => set("status", e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
+                className="mt-1 w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
+                title={bloqueadoPorJaAprovado ? "Orçamento já aprovado no servidor" : undefined}
               >
                 <option value="RASCUNHO">Rascunho</option>
                 <option value="ENVIADO">Enviado</option>
-                <option value="APROVADO">Aprovado</option>
+                <option value="APROVADO">Aprovado — gera o pedido ao salvar</option>
                 <option value="RECUSADO">Recusado</option>
               </select>
             </label>
             <label className="block sm:col-span-2">
               <span className="text-sm font-medium text-slate-700">Produto</span>
               <input
-                disabled={isEdit && form.status === "APROVADO"}
+                disabled={bloqueadoPorJaAprovado}
                 value={form.produto}
                 onChange={(e) => set("produto", e.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
@@ -214,7 +274,7 @@ export default function OrcamentoForm() {
                 type="number"
                 min={0.01}
                 step={0.01}
-                disabled={isEdit && form.status === "APROVADO"}
+                disabled={bloqueadoPorJaAprovado}
                 value={form.quantidade}
                 onChange={(e) => set("quantidade", e.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
@@ -226,7 +286,7 @@ export default function OrcamentoForm() {
                 type="number"
                 min={0.01}
                 step={0.01}
-                disabled={isEdit && form.status === "APROVADO"}
+                disabled={bloqueadoPorJaAprovado}
                 value={form.valorUnitario}
                 onChange={(e) => set("valorUnitario", e.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
@@ -245,7 +305,7 @@ export default function OrcamentoForm() {
             <label className="block sm:col-span-2">
               <span className="text-sm font-medium text-slate-700">Modelo</span>
               <input
-                disabled={isEdit && form.status === "APROVADO"}
+                disabled={bloqueadoPorJaAprovado}
                 value={form.modelo}
                 onChange={(e) => set("modelo", e.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
@@ -254,7 +314,7 @@ export default function OrcamentoForm() {
             <label className="block sm:col-span-2">
               <span className="text-sm font-medium text-slate-700">Cores</span>
               <input
-                disabled={isEdit && form.status === "APROVADO"}
+                disabled={bloqueadoPorJaAprovado}
                 value={form.cores}
                 onChange={(e) => set("cores", e.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
@@ -263,7 +323,7 @@ export default function OrcamentoForm() {
             <label className="block sm:col-span-2">
               <span className="text-sm font-medium text-slate-700">Personalização</span>
               <textarea
-                disabled={isEdit && form.status === "APROVADO"}
+                disabled={bloqueadoPorJaAprovado}
                 rows={3}
                 value={form.personalizacao}
                 onChange={(e) => set("personalizacao", e.target.value)}
@@ -273,7 +333,7 @@ export default function OrcamentoForm() {
             <label className="block sm:col-span-2">
               <span className="text-sm font-medium text-slate-700">Configuração</span>
               <textarea
-                disabled={isEdit && form.status === "APROVADO"}
+                disabled={bloqueadoPorJaAprovado}
                 rows={3}
                 value={form.configuracao}
                 onChange={(e) => set("configuracao", e.target.value)}
@@ -283,7 +343,7 @@ export default function OrcamentoForm() {
             <label className="block sm:col-span-2">
               <span className="text-sm font-medium text-slate-700">Prazo</span>
               <input
-                disabled={isEdit && form.status === "APROVADO"}
+                disabled={bloqueadoPorJaAprovado}
                 value={form.prazo}
                 onChange={(e) => set("prazo", e.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
@@ -292,7 +352,7 @@ export default function OrcamentoForm() {
             <label className="block sm:col-span-2">
               <span className="text-sm font-medium text-slate-700">Observações</span>
               <textarea
-                disabled={isEdit && form.status === "APROVADO"}
+                disabled={bloqueadoPorJaAprovado}
                 rows={3}
                 value={form.observacoes}
                 onChange={(e) => set("observacoes", e.target.value)}
@@ -303,6 +363,10 @@ export default function OrcamentoForm() {
 
           <div className="border-t border-slate-200 pt-4">
             <p className="text-xs font-semibold uppercase text-slate-500">Só para o PDF (opcional)</p>
+            <p className="mt-1 text-xs text-amber-800">
+              Estes campos são só para impressão do orçamento. O estado do pagamento do pedido acompanha-se em{" "}
+              <strong>Pedidos</strong> pelo status.
+            </p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <input
                 placeholder="Tipo de pagamento"
@@ -338,14 +402,24 @@ export default function OrcamentoForm() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-3 pt-2">
+          <div className="flex flex-wrap items-center gap-3 border-t border-slate-200 pt-4">
             <button
               type="submit"
-              disabled={saving || (isEdit && form.status === "APROVADO")}
+              disabled={saving}
               className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
             >
               {saving ? "Salvando…" : "Salvar"}
             </button>
+            {!bloqueadoPorJaAprovado && (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={aprovarECriarPedido}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                Aprovar orçamento e criar pedido
+              </button>
+            )}
             <button
               type="button"
               onClick={gerarPdf}

@@ -25,6 +25,7 @@ export function mapPedidoRow(row) {
     tipoEntrega: row.tipoEntrega,
     observacoesEntrega: row.observacoesEntrega,
     observacoes: row.observacoes,
+    registroPagamento: row.registroPagamento ?? "A_COBRAR",
     dataCriacao: row.dataCriacao,
     dataAtualizacao: row.dataAtualizacao,
   };

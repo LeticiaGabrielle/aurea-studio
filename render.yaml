@@ -1,0 +1,15 @@
+# Blueprint opcional para o Render: New → Blueprint → ligar este repositório.
+# Ajuste o nome do serviço se quiser.
+
+services:
+  - type: web
+    name: aurea-studio
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: npm install --prefix server && npm install --prefix client && npm run build --prefix client
+    startCommand: NODE_ENV=production npm start --prefix server
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
