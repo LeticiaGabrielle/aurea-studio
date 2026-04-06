@@ -4,8 +4,9 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dataDir = process.env.DATA_DIR || __dirname;
-const dbPath = process.env.SQLITE_PATH || path.join(dataDir, "app.db");
+/** Resolvidos em init(); podem mudar se DATA_DIR/SQLITE_PATH não forem graváveis (ex.: /data sem disco no Render). */
+let dataDir = process.env.DATA_DIR || __dirname;
+let dbPath = process.env.SQLITE_PATH || path.join(dataDir, "app.db");
 
 let innerDb;
 
@@ -57,10 +58,32 @@ export const db = {
   },
 };
 
-export async function init() {
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
+function ensureDbDirectory() {
+  const dir = path.dirname(dbPath);
+  if (fs.existsSync(dir)) return;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch (e) {
+    const noAccess = e && (e.code === "EACCES" || e.code === "EPERM");
+    const triedCustom =
+      (process.env.DATA_DIR && dir.startsWith(path.resolve(process.env.DATA_DIR))) ||
+      (process.env.SQLITE_PATH && path.isAbsolute(process.env.SQLITE_PATH));
+    if (noAccess && triedCustom) {
+      console.warn(
+        `[db] Sem permissão para criar "${dir}". ` +
+          "No Render, monte um Persistent Disk neste caminho ou remova DATA_DIR / SQLITE_PATH. " +
+          `A usar ${path.join(__dirname, "app.db")} (gravável; sem disco, dados perdem-se no redeploy).`
+      );
+      dataDir = __dirname;
+      dbPath = path.join(__dirname, "app.db");
+      return;
+    }
+    throw e;
   }
+}
+
+export async function init() {
+  ensureDbDirectory();
 
   const wasmDir = path.join(__dirname, "node_modules", "sql.js", "dist");
   const SQL = await initSqlJs({
