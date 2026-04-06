@@ -3,20 +3,20 @@ import { mapPedidoRow } from "../models/pedidoModel.js";
 
 /**
  * Cria pedido a partir de orçamento aprovado, se ainda não existir.
- * @returns {{ criado: boolean, pedido: object | null }}
+ * @returns {Promise<{ criado: boolean, pedido: object | null }>}
  */
-export function garantirPedidoParaOrcamentoAprovado(orcamentoId) {
+export async function garantirPedidoParaOrcamentoAprovado(orcamentoId) {
   const id = Number(orcamentoId);
-  const o = db.prepare("SELECT * FROM orcamentos WHERE id = ?").get(id);
+  const o = await db.prepare("SELECT * FROM orcamentos WHERE id = ?").get(id);
   if (!o || o.status !== "APROVADO") {
     return { criado: false, pedido: null };
   }
-  const existente = db.prepare("SELECT * FROM pedidos WHERE orcamentoId = ?").get(id);
+  const existente = await db.prepare('SELECT * FROM pedidos WHERE "orcamentoId" = ?').get(id);
   if (existente) {
     return { criado: false, pedido: mapPedidoRow(existente) };
   }
 
-  const numero = nextNumber("PED", "pedido");
+  const numero = await nextNumber("PED", "pedido");
   const now = new Date().toISOString();
   const valorTotal = o.valorTotal;
   const valorSinal = o.valorSinal;
@@ -25,13 +25,13 @@ export function garantirPedidoParaOrcamentoAprovado(orcamentoId) {
 
   const stmt = db.prepare(`
     INSERT INTO pedidos (
-      numero, orcamentoId, nomeCliente, telefone, produto, quantidade, modelo, cores,
-      personalizacao, configuracao, prazo, valorTotal, valorSinal, valorPago, custo, lucro,
-      status, tipoPagamento, chavePix, nomeRecebedor, tipoEntrega, observacoesEntrega,
-      observacoes, registroPagamento, dataCriacao, dataAtualizacao
+      numero, "orcamentoId", "nomeCliente", telefone, produto, quantidade, modelo, cores,
+      personalizacao, configuracao, prazo, "valorTotal", "valorSinal", "valorPago", custo, lucro,
+      status, "tipoPagamento", "chavePix", "nomeRecebedor", "tipoEntrega", "observacoesEntrega",
+      observacoes, "registroPagamento", "dataCriacao", "dataAtualizacao"
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `);
-  const info = stmt.run(
+  const info = await stmt.run(
     numero,
     id,
     o.nomeCliente,
@@ -59,6 +59,6 @@ export function garantirPedidoParaOrcamentoAprovado(orcamentoId) {
     now,
     now
   );
-  const row = db.prepare("SELECT * FROM pedidos WHERE id = ?").get(info.lastInsertRowid);
+  const row = await db.prepare("SELECT * FROM pedidos WHERE id = ?").get(info.lastInsertRowid);
   return { criado: true, pedido: mapPedidoRow(row) };
 }

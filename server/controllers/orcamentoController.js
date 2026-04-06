@@ -5,11 +5,11 @@ import { garantirPedidoParaOrcamentoAprovado } from "../services/pedidoFromOrcam
 const ALLOWED_STATUS = ["RASCUNHO", "ENVIADO", "APROVADO", "RECUSADO"];
 
 const ORC_SELECT = `
-  SELECT o.*, CASE WHEN EXISTS (SELECT 1 FROM pedidos p WHERE p.orcamentoId = o.id) THEN 1 ELSE 0 END AS possuiPedido
+  SELECT o.*, CASE WHEN EXISTS (SELECT 1 FROM pedidos p WHERE p."orcamentoId" = o.id) THEN 1 ELSE 0 END AS "possuiPedido"
   FROM orcamentos o
 `;
 
-export function listOrcamentos(req, res) {
+export async function listOrcamentos(req, res) {
   try {
     const { status, search } = req.query;
     let sql = `${ORC_SELECT} WHERE 1=1`;
@@ -19,21 +19,22 @@ export function listOrcamentos(req, res) {
       params.push(status);
     }
     if (search && String(search).trim()) {
-      sql += " AND (o.nomeCliente LIKE ? OR o.telefone LIKE ? OR o.produto LIKE ? OR o.numero LIKE ?)";
+      sql +=
+        " AND (o.\"nomeCliente\" LIKE ? OR o.telefone LIKE ? OR o.produto LIKE ? OR o.numero LIKE ?)";
       const q = `%${String(search).trim()}%`;
       params.push(q, q, q, q);
     }
     sql += " ORDER BY o.id DESC";
-    const rows = db.prepare(sql).all(...params);
+    const rows = await db.prepare(sql).all(...params);
     res.json(rows.map(mapOrcamentoRow));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 }
 
-export function getOrcamento(req, res) {
+export async function getOrcamento(req, res) {
   try {
-    const row = db.prepare(`${ORC_SELECT} WHERE o.id = ?`).get(req.params.id);
+    const row = await db.prepare(`${ORC_SELECT} WHERE o.id = ?`).get(req.params.id);
     const o = mapOrcamentoRow(row);
     if (!o) return res.status(404).json({ error: "Orçamento não encontrado" });
     res.json(o);
@@ -61,26 +62,26 @@ function validateOrcamentoBody(body, partial) {
   return errors;
 }
 
-export function createOrcamento(req, res) {
+export async function createOrcamento(req, res) {
   try {
     const body = req.body || {};
     const errs = validateOrcamentoBody(body, false);
     if (errs.length) return res.status(400).json({ errors: errs });
 
     const { valorTotal, valorSinal } = calcOrcamentoRow(body);
-    const numero = nextNumber("ORC", "orcamento");
+    const numero = await nextNumber("ORC", "orcamento");
     const now = new Date().toISOString();
     const status = body.status && ALLOWED_STATUS.includes(body.status) ? body.status : "RASCUNHO";
 
     const stmt = db.prepare(`
       INSERT INTO orcamentos (
-        numero, nomeCliente, telefone, produto, quantidade, modelo, cores,
-        personalizacao, configuracao, prazo, valorUnitario, valorTotal, valorSinal,
-        observacoes, dataCriacao, status,
-        tipoPagamento, chavePix, nomeRecebedor, tipoEntrega, observacoesEntrega
+        numero, "nomeCliente", telefone, produto, quantidade, modelo, cores,
+        personalizacao, configuracao, prazo, "valorUnitario", "valorTotal", "valorSinal",
+        observacoes, "dataCriacao", status,
+        "tipoPagamento", "chavePix", "nomeRecebedor", "tipoEntrega", "observacoesEntrega"
       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
-    const info = stmt.run(
+    const info = await stmt.run(
       numero,
       String(body.nomeCliente || "").trim(),
       String(body.telefone || "").trim(),
@@ -104,8 +105,8 @@ export function createOrcamento(req, res) {
       String(body.observacoesEntrega || "").trim()
     );
     const newId = info.lastInsertRowid;
-    const { criado, pedido } = garantirPedidoParaOrcamentoAprovado(newId);
-    const row = db.prepare(`${ORC_SELECT} WHERE o.id = ?`).get(newId);
+    const { criado, pedido } = await garantirPedidoParaOrcamentoAprovado(newId);
+    const row = await db.prepare(`${ORC_SELECT} WHERE o.id = ?`).get(newId);
     const out = mapOrcamentoRow(row);
     if (criado && pedido) {
       out.pedidoCriadoAutomaticamente = pedido;
@@ -116,10 +117,10 @@ export function createOrcamento(req, res) {
   }
 }
 
-export function updateOrcamento(req, res) {
+export async function updateOrcamento(req, res) {
   try {
     const id = req.params.id;
-    const existing = db.prepare("SELECT * FROM orcamentos WHERE id = ?").get(id);
+    const existing = await db.prepare("SELECT * FROM orcamentos WHERE id = ?").get(id);
     if (!existing) return res.status(404).json({ error: "Orçamento não encontrado" });
     if (existing.status === "APROVADO") {
       return res.status(400).json({ error: "Orçamento aprovado não pode ser editado" });
@@ -170,38 +171,40 @@ export function updateOrcamento(req, res) {
       valorUnitario: merged.valorUnitario,
     });
 
-    db.prepare(`
+    await db
+      .prepare(`
       UPDATE orcamentos SET
-        nomeCliente = ?, telefone = ?, produto = ?, quantidade = ?, modelo = ?, cores = ?,
-        personalizacao = ?, configuracao = ?, prazo = ?, valorUnitario = ?, valorTotal = ?, valorSinal = ?,
+        "nomeCliente" = ?, telefone = ?, produto = ?, quantidade = ?, modelo = ?, cores = ?,
+        personalizacao = ?, configuracao = ?, prazo = ?, "valorUnitario" = ?, "valorTotal" = ?, "valorSinal" = ?,
         observacoes = ?, status = ?,
-        tipoPagamento = ?, chavePix = ?, nomeRecebedor = ?, tipoEntrega = ?, observacoesEntrega = ?
+        "tipoPagamento" = ?, "chavePix" = ?, "nomeRecebedor" = ?, "tipoEntrega" = ?, "observacoesEntrega" = ?
       WHERE id = ?
-    `).run(
-      String(merged.nomeCliente || "").trim(),
-      String(merged.telefone || "").trim(),
-      String(merged.produto || "").trim(),
-      Number(merged.quantidade),
-      String(merged.modelo || "").trim(),
-      String(merged.cores || "").trim(),
-      String(merged.personalizacao || "").trim(),
-      String(merged.configuracao || "").trim(),
-      String(merged.prazo || "").trim(),
-      Number(merged.valorUnitario),
-      valorTotal,
-      valorSinal,
-      String(merged.observacoes || "").trim(),
-      merged.status,
-      String(merged.tipoPagamento || "").trim(),
-      String(merged.chavePix || "").trim(),
-      String(merged.nomeRecebedor || "").trim(),
-      String(merged.tipoEntrega || "").trim(),
-      String(merged.observacoesEntrega || "").trim(),
-      id
-    );
+    `)
+      .run(
+        String(merged.nomeCliente || "").trim(),
+        String(merged.telefone || "").trim(),
+        String(merged.produto || "").trim(),
+        Number(merged.quantidade),
+        String(merged.modelo || "").trim(),
+        String(merged.cores || "").trim(),
+        String(merged.personalizacao || "").trim(),
+        String(merged.configuracao || "").trim(),
+        String(merged.prazo || "").trim(),
+        Number(merged.valorUnitario),
+        valorTotal,
+        valorSinal,
+        String(merged.observacoes || "").trim(),
+        merged.status,
+        String(merged.tipoPagamento || "").trim(),
+        String(merged.chavePix || "").trim(),
+        String(merged.nomeRecebedor || "").trim(),
+        String(merged.tipoEntrega || "").trim(),
+        String(merged.observacoesEntrega || "").trim(),
+        id
+      );
 
-    const { criado, pedido } = garantirPedidoParaOrcamentoAprovado(id);
-    const row = db.prepare(`${ORC_SELECT} WHERE o.id = ?`).get(id);
+    const { criado, pedido } = await garantirPedidoParaOrcamentoAprovado(id);
+    const row = await db.prepare(`${ORC_SELECT} WHERE o.id = ?`).get(id);
     const out = mapOrcamentoRow(row);
     if (criado && pedido) {
       out.pedidoCriadoAutomaticamente = pedido;
@@ -212,31 +215,31 @@ export function updateOrcamento(req, res) {
   }
 }
 
-export function deleteOrcamento(req, res) {
+export async function deleteOrcamento(req, res) {
   try {
     const id = req.params.id;
-    const existing = db.prepare("SELECT * FROM orcamentos WHERE id = ?").get(id);
+    const existing = await db.prepare("SELECT * FROM orcamentos WHERE id = ?").get(id);
     if (!existing) return res.status(404).json({ error: "Orçamento não encontrado" });
-    const pedido = db.prepare("SELECT id FROM pedidos WHERE orcamentoId = ?").get(id);
+    const pedido = await db.prepare('SELECT id FROM pedidos WHERE "orcamentoId" = ?').get(id);
     if (pedido) {
       return res.status(400).json({ error: "Não é possível excluir: já existe pedido vinculado" });
     }
-    db.prepare("DELETE FROM orcamentos WHERE id = ?").run(id);
+    await db.prepare("DELETE FROM orcamentos WHERE id = ?").run(id);
     res.status(204).send();
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 }
 
-export function converterEmPedido(req, res) {
+export async function converterEmPedido(req, res) {
   try {
     const id = Number(req.params.id);
-    const o = db.prepare("SELECT * FROM orcamentos WHERE id = ?").get(id);
+    const o = await db.prepare("SELECT * FROM orcamentos WHERE id = ?").get(id);
     if (!o) return res.status(404).json({ error: "Orçamento não encontrado" });
     if (o.status !== "APROVADO") {
       return res.status(400).json({ error: "Apenas orçamentos aprovados podem virar pedido" });
     }
-    const { criado, pedido } = garantirPedidoParaOrcamentoAprovado(id);
+    const { criado, pedido } = await garantirPedidoParaOrcamentoAprovado(id);
     if (!pedido) {
       return res.status(500).json({ error: "Não foi possível criar o pedido" });
     }

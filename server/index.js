@@ -25,6 +25,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 await init();
 
+/** Express 4 não trata rejeições de handlers async. */
+function asyncHandler(fn) {
+  return (req, res) => {
+    Promise.resolve(fn(req, res)).catch((e) => {
+      res.status(500).json({ error: e.message });
+    });
+  };
+}
+
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 
@@ -37,23 +46,28 @@ app.use(
 );
 app.use(express.json());
 
-app.get("/api/health", (req, res) => res.json({ ok: true }));
+app.get("/api/health", (req, res) =>
+  res.json({
+    ok: true,
+    db: process.env.DATABASE_URL?.trim() ? "postgresql" : "sqlite",
+  })
+);
 
-app.get("/api/orcamentos", listOrcamentos);
-app.get("/api/orcamentos/:id", getOrcamento);
-app.post("/api/orcamentos", createOrcamento);
-app.put("/api/orcamentos/:id", updateOrcamento);
-app.delete("/api/orcamentos/:id", deleteOrcamento);
-app.post("/api/orcamentos/:id/converter-pedido", converterEmPedido);
+app.get("/api/orcamentos", asyncHandler(listOrcamentos));
+app.get("/api/orcamentos/:id", asyncHandler(getOrcamento));
+app.post("/api/orcamentos", asyncHandler(createOrcamento));
+app.put("/api/orcamentos/:id", asyncHandler(updateOrcamento));
+app.delete("/api/orcamentos/:id", asyncHandler(deleteOrcamento));
+app.post("/api/orcamentos/:id/converter-pedido", asyncHandler(converterEmPedido));
 
-app.get("/api/pedidos", listPedidos);
-app.get("/api/pedidos/:id", getPedido);
-app.put("/api/pedidos/:id", updatePedido);
-app.patch("/api/pedidos/:id/status", patchPedidoStatus);
-app.patch("/api/pedidos/:id/registro-pagamento", patchPedidoRegistroPagamento);
-app.delete("/api/pedidos/:id", deletePedido);
+app.get("/api/pedidos", asyncHandler(listPedidos));
+app.get("/api/pedidos/:id", asyncHandler(getPedido));
+app.put("/api/pedidos/:id", asyncHandler(updatePedido));
+app.patch("/api/pedidos/:id/status", asyncHandler(patchPedidoStatus));
+app.patch("/api/pedidos/:id/registro-pagamento", asyncHandler(patchPedidoRegistroPagamento));
+app.delete("/api/pedidos/:id", asyncHandler(deletePedido));
 
-app.get("/api/dashboard", getDashboard);
+app.get("/api/dashboard", asyncHandler(getDashboard));
 
 const clientDist = path.join(__dirname, "..", "client", "dist");
 const isProd = process.env.NODE_ENV === "production";

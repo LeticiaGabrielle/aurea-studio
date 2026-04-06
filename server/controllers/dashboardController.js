@@ -1,39 +1,49 @@
 import { db } from "../db.js";
 
-export function getDashboard(req, res) {
+export async function getDashboard(req, res) {
   try {
-    const faturamentoRow = db.prepare(`
-      SELECT COALESCE(SUM(valorTotal), 0) AS v
+    const faturamentoRow = await db
+      .prepare(`
+      SELECT COALESCE(SUM("valorTotal"), 0) AS v
       FROM pedidos
       WHERE status IN ('PAGO', 'FINALIZADO')
-    `).get();
+    `)
+      .get();
 
-    const totalRecebidoRow = db.prepare(`
-      SELECT COALESCE(SUM(valorPago), 0) AS v
+    const totalRecebidoRow = await db
+      .prepare(`
+      SELECT COALESCE(SUM("valorPago"), 0) AS v
       FROM pedidos
       WHERE status != 'CANCELADO'
-    `).get();
+    `)
+      .get();
 
-    const lucroRow = db.prepare(`
+    const lucroRow = await db
+      .prepare(`
       SELECT COALESCE(SUM(lucro), 0) AS v
       FROM pedidos
       WHERE status IN ('PAGO', 'FINALIZADO')
-    `).get();
+    `)
+      .get();
 
-    const pendentesRow = db.prepare(`
+    const pendentesRow = await db
+      .prepare(`
       SELECT COUNT(*) AS c FROM pedidos WHERE status = 'PENDENTE'
-    `).get();
+    `)
+      .get();
 
-    const canceladosRow = db.prepare(`
+    const canceladosRow = await db
+      .prepare(`
       SELECT COUNT(*) AS c FROM pedidos WHERE status = 'CANCELADO'
-    `).get();
+    `)
+      .get();
 
     res.json({
-      faturamentoTotal: faturamentoRow.v,
-      totalRecebido: totalRecebidoRow.v,
-      lucroTotal: lucroRow.v,
-      pedidosPendentes: pendentesRow.c,
-      pedidosCancelados: canceladosRow.c,
+      faturamentoTotal: Number(faturamentoRow.v),
+      totalRecebido: Number(totalRecebidoRow.v),
+      lucroTotal: Number(lucroRow.v),
+      pedidosPendentes: Number(pendentesRow.c),
+      pedidosCancelados: Number(canceladosRow.c),
     });
   } catch (e) {
     res.status(500).json({ error: e.message });

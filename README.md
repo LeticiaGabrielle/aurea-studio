@@ -1,19 +1,19 @@
 # Aurea Studio — Gestão de orçamentos e pedidos
 
-Sistema web para empresa de produtos personalizados (impressão 3D, NFC, etc.): **orçamentos** e **pedidos** separados, com SQLite, API REST e interface React.
+Sistema web para empresa de produtos personalizados (impressão 3D, NFC, etc.): **orçamentos** e **pedidos** separados, com API REST e interface React. O servidor usa **SQLite** (ficheiro local) por omissão ou **PostgreSQL** quando existe `DATABASE_URL` (recomendado no Render para os dados não sumirem).
 
 ## Stack
 
 - **Frontend:** React (Vite) + Tailwind CSS
 - **Backend:** Node.js + Express
-- **Banco:** SQLite em ficheiro via **`sql.js`** (sem módulos nativos; fácil no Windows e no Render)
+- **Banco:** SQLite (`sql.js`) por omissão; **PostgreSQL** (`pg`) se definires `DATABASE_URL` (persistência real em hosting efémero)
 - **PDF:** `html2pdf.js` no navegador (a partir do preview do orçamento)
 
 ## Estrutura
 
 ```
 /client   → React (Vite)
-/server   → Express + SQLite
+/server   → Express + SQLite ou PostgreSQL
 ```
 
 Organização sugerida no código: `components/`, `pages/`, `services/` (cliente) e `controllers/`, `models/` (servidor).
@@ -72,7 +72,9 @@ Abra `http://localhost:3001` — o Express entrega o build estático do React e 
 |----------------|-----------|
 | `PORT`         | Porta HTTP (Render injeta automaticamente). |
 | `NODE_ENV`     | Use `production` para servir o React build. |
-| `SQLITE_PATH`  | Caminho do ficheiro SQLite (opcional). |
+| `DATABASE_URL` | URL PostgreSQL; se definida, **não** usa SQLite (dados persistentes no host). |
+| `DATABASE_SSL` | `false` para Postgres local sem TLS. |
+| `SQLITE_PATH`  | Caminho do ficheiro SQLite (opcional; ignorado se `DATABASE_URL` existir). |
 | `DATA_DIR`     | Pasta onde criar `app.db` se `SQLITE_PATH` não for usado. |
 | `CORS_ORIGIN`  | Origem permitida no CORS (opcional; por omissão reflete o pedido). |
 
@@ -100,7 +102,9 @@ Um único **Web Service** serve a API e o React compilado. O browser usa URLs **
 | `NODE_ENV` | Sim | `production` | Sem isto o Express **não** envia o ficheiros estáticos do React. |
 | `PORT` | Não mexer | *(Render preenche)* | O Render injeta a porta; o `server` já usa `process.env.PORT`. |
 | `VITE_API_URL` | Não | *(vazio / não criar)* | Só para monólito: o build do Vite fica com `""` e o `fetch` usa o mesmo host. |
-| `DATA_DIR` ou `SQLITE_PATH` | Opcional | ex. `/data` | Com **Persistent Disk** montado; ver abaixo. |
+| `DATA_DIR` ou `SQLITE_PATH` | Opcional | ex. `/data` | Só SQLite: com **Persistent Disk** montado; ver abaixo. |
+| `DATABASE_URL` | **Recomendado no Render** | *(URL interna do Postgres)* | Com **PostgreSQL** no Render (ou Neon, etc.): os dados **persistem** entre deploys. Se existir, o servidor **ignora** o ficheiro SQLite. |
+| `DATABASE_SSL` | Opcional | `false` | Postgres local sem SSL (ex. Docker em `localhost`). |
 | `CORS_ORIGIN` | Opcional | URL do site | Só se o front estiver noutro domínio; no deploy único pode omitir. |
 
 **Onde configurar:** no Render → o teu serviço → **Environment** → *Add Environment Variable*.
@@ -142,9 +146,15 @@ Um único **Web Service** serve a API e o React compilado. O browser usa URLs **
 - **Auto Deploy:** Settings → *Auto-Deploy* → **Yes** (deploy a cada push na branch).
 - O primeiro arranque no plano gratuito pode demorar (~1 min) após inatividade (*cold start*).
 
+### Persistência no Render (orçamentos que não somem)
+
+**Recomendado:** cria uma base **PostgreSQL** no Render (**New** → **PostgreSQL**), espera ficar disponível e, no **Web Service** da app, em **Environment** → **Add** → cola a variável **`DATABASE_URL`** com o valor que o Render mostra (ligações *Internal Database URL* ao mesmo serviço/rede). Volta a fazer **deploy** da app. O endpoint `GET /api/health` devolve `"db": "postgresql"` quando está ativo.
+
+**Alternativa:** SQLite com disco persistente (abaixo) — costuma exigir plano pago no Render.
+
 ### Persistência SQLite (dados que não se perdem no redeploy)
 
-No plano gratuito o sistema de ficheiros do contentor é **efémero**: cada deploy pode apagar `app.db`.
+Sem `DATABASE_URL` e sem disco, o ficheiro `app.db` fica no disco **efémero** do contentor: cada deploy pode apagar os dados.
 
 1. No serviço → **Disks** → **Add Disk** (plano pago ou conforme a tua conta Render).
 2. Monta por exemplo em **`/data`**.
@@ -167,11 +177,6 @@ Neste projeto, **Vite e ferramentas de build do client estão em `dependencies`*
 Também foi removida a dependência inválida `file:..` do `client/package.json` (quebrava instalações em CI).
 
 **Nota:** Este sistema completo (API + SQLite + React) combina com **um Web Service no Render** (ou similar). Se publicares **só** o front noutro serviço, tens de definir `VITE_API_URL` para a URL da API e esse serviço não servirá `/api` sozinho.
-
-### Migração futura para PostgreSQL
-
-- Mantenha os controladores finos e as queries em funções dedicadas (como neste projeto).
-- Troque a camada `db.js` (hoje `sql.js` + ficheiro) por um cliente `pg`, use `$1,$2,...` nas queries e ajuste tipos (`SERIAL`, `TIMESTAMP`, etc.). A forma dos JSON da API pode permanecer igual.
 
 ## Regras de negócio (resumo)
 

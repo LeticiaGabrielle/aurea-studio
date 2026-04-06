@@ -6,7 +6,7 @@ const ALLOWED_STATUS = ["PENDENTE", "SINAL_PAGO", "PAGO", "FINALIZADO", "CANCELA
 /** Controlo interno (não vai para o PDF do orçamento). */
 export const ALLOWED_REGISTRO_PAGAMENTO = ["A_COBRAR", "PAGO_50", "PAGO_100"];
 
-export function listPedidos(req, res) {
+export async function listPedidos(req, res) {
   try {
     const { status, search } = req.query;
     let sql = "SELECT * FROM pedidos WHERE 1=1";
@@ -16,21 +16,22 @@ export function listPedidos(req, res) {
       params.push(status);
     }
     if (search && String(search).trim()) {
-      sql += " AND (nomeCliente LIKE ? OR telefone LIKE ? OR produto LIKE ? OR numero LIKE ?)";
+      sql +=
+        " AND (\"nomeCliente\" LIKE ? OR telefone LIKE ? OR produto LIKE ? OR numero LIKE ?)";
       const q = `%${String(search).trim()}%`;
       params.push(q, q, q, q);
     }
     sql += " ORDER BY id DESC";
-    const rows = db.prepare(sql).all(...params);
+    const rows = await db.prepare(sql).all(...params);
     res.json(rows.map(mapPedidoRow));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 }
 
-export function getPedido(req, res) {
+export async function getPedido(req, res) {
   try {
-    const row = db.prepare("SELECT * FROM pedidos WHERE id = ?").get(req.params.id);
+    const row = await db.prepare("SELECT * FROM pedidos WHERE id = ?").get(req.params.id);
     const p = mapPedidoRow(row);
     if (!p) return res.status(404).json({ error: "Pedido não encontrado" });
     res.json(p);
@@ -39,10 +40,10 @@ export function getPedido(req, res) {
   }
 }
 
-export function updatePedido(req, res) {
+export async function updatePedido(req, res) {
   try {
     const id = req.params.id;
-    const existing = db.prepare("SELECT * FROM pedidos WHERE id = ?").get(id);
+    const existing = await db.prepare("SELECT * FROM pedidos WHERE id = ?").get(id);
     if (!existing) return res.status(404).json({ error: "Pedido não encontrado" });
     if (existing.status === "CANCELADO") {
       return res.status(400).json({ error: "Pedido cancelado não pode ser editado" });
@@ -92,51 +93,53 @@ export function updatePedido(req, res) {
     const lucro = calcPedidoLucro(vt, merged.custo);
     const now = new Date().toISOString();
 
-    db.prepare(`
+    await db
+      .prepare(`
       UPDATE pedidos SET
-        nomeCliente = ?, telefone = ?, produto = ?, quantidade = ?, modelo = ?, cores = ?,
-        personalizacao = ?, configuracao = ?, prazo = ?, valorTotal = ?, valorSinal = ?,
-        valorPago = ?, custo = ?, lucro = ?, status = ?, tipoPagamento = ?, chavePix = ?,
-        nomeRecebedor = ?, tipoEntrega = ?, observacoesEntrega = ?, observacoes = ?,
-        registroPagamento = ?, dataAtualizacao = ?
+        "nomeCliente" = ?, telefone = ?, produto = ?, quantidade = ?, modelo = ?, cores = ?,
+        personalizacao = ?, configuracao = ?, prazo = ?, "valorTotal" = ?, "valorSinal" = ?,
+        "valorPago" = ?, custo = ?, lucro = ?, status = ?, "tipoPagamento" = ?, "chavePix" = ?,
+        "nomeRecebedor" = ?, "tipoEntrega" = ?, "observacoesEntrega" = ?, observacoes = ?,
+        "registroPagamento" = ?, "dataAtualizacao" = ?
       WHERE id = ?
-    `).run(
-      String(merged.nomeCliente || "").trim(),
-      String(merged.telefone || "").trim(),
-      String(merged.produto || "").trim(),
-      Number(merged.quantidade),
-      String(merged.modelo || "").trim(),
-      String(merged.cores || "").trim(),
-      String(merged.personalizacao || "").trim(),
-      String(merged.configuracao || "").trim(),
-      String(merged.prazo || "").trim(),
-      Number(merged.valorTotal),
-      valorSinal,
-      Number(merged.valorPago) || 0,
-      Number(merged.custo) || 0,
-      lucro,
-      merged.status,
-      String(merged.tipoPagamento || "").trim(),
-      String(merged.chavePix || "").trim(),
-      String(merged.nomeRecebedor || "").trim(),
-      String(merged.tipoEntrega || "").trim(),
-      String(merged.observacoesEntrega || "").trim(),
-      String(merged.observacoes || "").trim(),
-      merged.registroPagamento,
-      now,
-      id
-    );
-    const row = db.prepare("SELECT * FROM pedidos WHERE id = ?").get(id);
+    `)
+      .run(
+        String(merged.nomeCliente || "").trim(),
+        String(merged.telefone || "").trim(),
+        String(merged.produto || "").trim(),
+        Number(merged.quantidade),
+        String(merged.modelo || "").trim(),
+        String(merged.cores || "").trim(),
+        String(merged.personalizacao || "").trim(),
+        String(merged.configuracao || "").trim(),
+        String(merged.prazo || "").trim(),
+        Number(merged.valorTotal),
+        valorSinal,
+        Number(merged.valorPago) || 0,
+        Number(merged.custo) || 0,
+        lucro,
+        merged.status,
+        String(merged.tipoPagamento || "").trim(),
+        String(merged.chavePix || "").trim(),
+        String(merged.nomeRecebedor || "").trim(),
+        String(merged.tipoEntrega || "").trim(),
+        String(merged.observacoesEntrega || "").trim(),
+        String(merged.observacoes || "").trim(),
+        merged.registroPagamento,
+        now,
+        id
+      );
+    const row = await db.prepare("SELECT * FROM pedidos WHERE id = ?").get(id);
     res.json(mapPedidoRow(row));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 }
 
-export function patchPedidoStatus(req, res) {
+export async function patchPedidoStatus(req, res) {
   try {
     const id = req.params.id;
-    const existing = db.prepare("SELECT * FROM pedidos WHERE id = ?").get(id);
+    const existing = await db.prepare("SELECT * FROM pedidos WHERE id = ?").get(id);
     if (!existing) return res.status(404).json({ error: "Pedido não encontrado" });
     if (existing.status === "CANCELADO") {
       return res.status(400).json({ error: "Pedido cancelado não pode ser alterado" });
@@ -146,18 +149,20 @@ export function patchPedidoStatus(req, res) {
       return res.status(400).json({ error: "status inválido" });
     }
     const now = new Date().toISOString();
-    db.prepare("UPDATE pedidos SET status = ?, dataAtualizacao = ? WHERE id = ?").run(status, now, id);
-    const row = db.prepare("SELECT * FROM pedidos WHERE id = ?").get(id);
+    await db
+      .prepare('UPDATE pedidos SET status = ?, "dataAtualizacao" = ? WHERE id = ?')
+      .run(status, now, id);
+    const row = await db.prepare("SELECT * FROM pedidos WHERE id = ?").get(id);
     res.json(mapPedidoRow(row));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 }
 
-export function patchPedidoRegistroPagamento(req, res) {
+export async function patchPedidoRegistroPagamento(req, res) {
   try {
     const id = req.params.id;
-    const existing = db.prepare("SELECT * FROM pedidos WHERE id = ?").get(id);
+    const existing = await db.prepare("SELECT * FROM pedidos WHERE id = ?").get(id);
     if (!existing) return res.status(404).json({ error: "Pedido não encontrado" });
     if (existing.status === "CANCELADO") {
       return res.status(400).json({ error: "Pedido cancelado não pode ser alterado" });
@@ -167,22 +172,22 @@ export function patchPedidoRegistroPagamento(req, res) {
       return res.status(400).json({ error: "registroPagamento inválido" });
     }
     const now = new Date().toISOString();
-    db.prepare("UPDATE pedidos SET registroPagamento = ?, dataAtualizacao = ? WHERE id = ?").run(
-      registroPagamento,
-      now,
-      id
-    );
-    const row = db.prepare("SELECT * FROM pedidos WHERE id = ?").get(id);
+    await db
+      .prepare(
+        'UPDATE pedidos SET "registroPagamento" = ?, "dataAtualizacao" = ? WHERE id = ?'
+      )
+      .run(registroPagamento, now, id);
+    const row = await db.prepare("SELECT * FROM pedidos WHERE id = ?").get(id);
     res.json(mapPedidoRow(row));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 }
 
-export function deletePedido(req, res) {
+export async function deletePedido(req, res) {
   try {
     const id = req.params.id;
-    const r = db.prepare("DELETE FROM pedidos WHERE id = ?").run(id);
+    const r = await db.prepare("DELETE FROM pedidos WHERE id = ?").run(id);
     if (r.changes === 0) return res.status(404).json({ error: "Pedido não encontrado" });
     res.status(204).send();
   } catch (e) {
