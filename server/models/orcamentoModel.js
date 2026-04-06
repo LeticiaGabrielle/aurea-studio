@@ -18,6 +18,11 @@ export function mapOrcamentoRow(row) {
     observacoes: row.observacoes,
     dataCriacao: row.dataCriacao,
     status: row.status,
+    tipoPagamento: row.tipoPagamento ?? "",
+    chavePix: row.chavePix ?? "",
+    nomeRecebedor: row.nomeRecebedor ?? "",
+    tipoEntrega: row.tipoEntrega ?? "",
+    observacoesEntrega: row.observacoesEntrega ?? "",
     ...(row.possuiPedido !== undefined && row.possuiPedido !== null
       ? {
           possuiPedido:

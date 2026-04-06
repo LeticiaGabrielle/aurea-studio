@@ -97,7 +97,12 @@ export async function init() {
       valorSinal REAL NOT NULL DEFAULT 0,
       observacoes TEXT NOT NULL DEFAULT '',
       dataCriacao TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'RASCUNHO'
+      status TEXT NOT NULL DEFAULT 'RASCUNHO',
+      tipoPagamento TEXT NOT NULL DEFAULT '',
+      chavePix TEXT NOT NULL DEFAULT '',
+      nomeRecebedor TEXT NOT NULL DEFAULT '',
+      tipoEntrega TEXT NOT NULL DEFAULT '',
+      observacoesEntrega TEXT NOT NULL DEFAULT ''
     );
 
     CREATE TABLE IF NOT EXISTS pedidos (
@@ -131,7 +136,25 @@ export async function init() {
     );
   `);
   migratePedidosRegistroPagamento();
+  migrateOrcamentosPdfExtras();
   persist();
+}
+
+/** Bases antigas sem campos de pagamento/entrega no PDF do orçamento. */
+function migrateOrcamentosPdfExtras() {
+  const cols = db.prepare("PRAGMA table_info(orcamentos)").all();
+  const names = new Set(cols.map((c) => c.name));
+  const add = (name, ddl) => {
+    if (!names.has(name)) {
+      db.prepare(`ALTER TABLE orcamentos ADD COLUMN ${name} ${ddl}`).run();
+      names.add(name);
+    }
+  };
+  add("tipoPagamento", "TEXT NOT NULL DEFAULT ''");
+  add("chavePix", "TEXT NOT NULL DEFAULT ''");
+  add("nomeRecebedor", "TEXT NOT NULL DEFAULT ''");
+  add("tipoEntrega", "TEXT NOT NULL DEFAULT ''");
+  add("observacoesEntrega", "TEXT NOT NULL DEFAULT ''");
 }
 
 /** Bases antigas sem a coluna de controlo interno de cobrança. */

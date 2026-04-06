@@ -78,6 +78,13 @@ export default function OrcamentoForm() {
           observacoes: o.observacoes,
           status: o.status,
         });
+        setPdfExtras({
+          tipoPagamento: o.tipoPagamento ?? "",
+          chavePix: o.chavePix ?? "",
+          nomeRecebedor: o.nomeRecebedor ?? "",
+          tipoEntrega: o.tipoEntrega ?? "",
+          observacoesEntrega: o.observacoesEntrega ?? "",
+        });
       })
       .catch((e) => setErr(e.message))
       .finally(() => setLoading(false));
@@ -123,6 +130,11 @@ export default function OrcamentoForm() {
     valorUnitario: Number(form.valorUnitario),
     observacoes: form.observacoes,
     status: statusOverride ?? form.status,
+    tipoPagamento: pdfExtras.tipoPagamento,
+    chavePix: pdfExtras.chavePix,
+    nomeRecebedor: pdfExtras.nomeRecebedor,
+    tipoEntrega: pdfExtras.tipoEntrega,
+    observacoesEntrega: pdfExtras.observacoesEntrega,
   });
 
   const submitOrcamento = async (statusOverride) => {
@@ -362,40 +374,45 @@ export default function OrcamentoForm() {
           </div>
 
           <div className="border-t border-slate-200 pt-4">
-            <p className="text-xs font-semibold uppercase text-slate-500">Só para o PDF (opcional)</p>
-            <p className="mt-1 text-xs text-amber-800">
-              Estes campos são só para impressão do orçamento. O estado do pagamento do pedido acompanha-se em{" "}
-              <strong>Pedidos</strong> pelo status.
+            <p className="text-xs font-semibold uppercase text-slate-500">Pagamento e entrega no PDF (opcional)</p>
+            <p className="mt-1 text-xs text-slate-600">
+              Guardados com o orçamento ao clicar em <strong>Salvar</strong>. Ao aprovar, copiam-se para o pedido. O
+              acompanhamento do pagamento continua em <strong>Pedidos</strong> pelo status.
             </p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <input
                 placeholder="Tipo de pagamento"
+                disabled={bloqueadoPorJaAprovado}
                 value={pdfExtras.tipoPagamento}
                 onChange={(e) => setPdfExtras((x) => ({ ...x, tipoPagamento: e.target.value }))}
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
               />
               <input
                 placeholder="Chave PIX"
+                disabled={bloqueadoPorJaAprovado}
                 value={pdfExtras.chavePix}
                 onChange={(e) => setPdfExtras((x) => ({ ...x, chavePix: e.target.value }))}
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
               />
               <input
                 placeholder="Nome do recebedor"
+                disabled={bloqueadoPorJaAprovado}
                 value={pdfExtras.nomeRecebedor}
                 onChange={(e) => setPdfExtras((x) => ({ ...x, nomeRecebedor: e.target.value }))}
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
               />
               <input
                 placeholder="Tipo de entrega"
+                disabled={bloqueadoPorJaAprovado}
                 value={pdfExtras.tipoEntrega}
                 onChange={(e) => setPdfExtras((x) => ({ ...x, tipoEntrega: e.target.value }))}
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
               />
               <textarea
                 placeholder="Observações de entrega"
                 rows={2}
-                className="sm:col-span-2 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                disabled={bloqueadoPorJaAprovado}
+                className="sm:col-span-2 rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
                 value={pdfExtras.observacoesEntrega}
                 onChange={(e) => setPdfExtras((x) => ({ ...x, observacoesEntrega: e.target.value }))}
               />

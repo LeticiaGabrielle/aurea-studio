@@ -76,8 +76,9 @@ export function createOrcamento(req, res) {
       INSERT INTO orcamentos (
         numero, nomeCliente, telefone, produto, quantidade, modelo, cores,
         personalizacao, configuracao, prazo, valorUnitario, valorTotal, valorSinal,
-        observacoes, dataCriacao, status
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        observacoes, dataCriacao, status,
+        tipoPagamento, chavePix, nomeRecebedor, tipoEntrega, observacoesEntrega
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
     const info = stmt.run(
       numero,
@@ -95,7 +96,12 @@ export function createOrcamento(req, res) {
       valorSinal,
       String(body.observacoes || "").trim(),
       now,
-      status
+      status,
+      String(body.tipoPagamento || "").trim(),
+      String(body.chavePix || "").trim(),
+      String(body.nomeRecebedor || "").trim(),
+      String(body.tipoEntrega || "").trim(),
+      String(body.observacoesEntrega || "").trim()
     );
     const newId = info.lastInsertRowid;
     const { criado, pedido } = garantirPedidoParaOrcamentoAprovado(newId);
@@ -144,6 +150,16 @@ export function updateOrcamento(req, res) {
       valorUnitario: body.valorUnitario !== undefined ? body.valorUnitario : existing.valorUnitario,
       observacoes: body.observacoes !== undefined ? body.observacoes : existing.observacoes,
       status: body.status !== undefined ? body.status : existing.status,
+      tipoPagamento:
+        body.tipoPagamento !== undefined ? body.tipoPagamento : existing.tipoPagamento ?? "",
+      chavePix: body.chavePix !== undefined ? body.chavePix : existing.chavePix ?? "",
+      nomeRecebedor:
+        body.nomeRecebedor !== undefined ? body.nomeRecebedor : existing.nomeRecebedor ?? "",
+      tipoEntrega: body.tipoEntrega !== undefined ? body.tipoEntrega : existing.tipoEntrega ?? "",
+      observacoesEntrega:
+        body.observacoesEntrega !== undefined
+          ? body.observacoesEntrega
+          : existing.observacoesEntrega ?? "",
     };
     if (merged.status && !ALLOWED_STATUS.includes(merged.status)) {
       return res.status(400).json({ error: "status inválido" });
@@ -158,7 +174,8 @@ export function updateOrcamento(req, res) {
       UPDATE orcamentos SET
         nomeCliente = ?, telefone = ?, produto = ?, quantidade = ?, modelo = ?, cores = ?,
         personalizacao = ?, configuracao = ?, prazo = ?, valorUnitario = ?, valorTotal = ?, valorSinal = ?,
-        observacoes = ?, status = ?
+        observacoes = ?, status = ?,
+        tipoPagamento = ?, chavePix = ?, nomeRecebedor = ?, tipoEntrega = ?, observacoesEntrega = ?
       WHERE id = ?
     `).run(
       String(merged.nomeCliente || "").trim(),
@@ -175,6 +192,11 @@ export function updateOrcamento(req, res) {
       valorSinal,
       String(merged.observacoes || "").trim(),
       merged.status,
+      String(merged.tipoPagamento || "").trim(),
+      String(merged.chavePix || "").trim(),
+      String(merged.nomeRecebedor || "").trim(),
+      String(merged.tipoEntrega || "").trim(),
+      String(merged.observacoesEntrega || "").trim(),
       id
     );
 
