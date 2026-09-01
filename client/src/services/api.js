@@ -8,7 +8,18 @@ export function apiUrl(path) {
 async function handle(res) {
   if (res.status === 204) return null;
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(
+        res.status === 500 && text.includes("Internal Server Error")
+          ? "Servidor indisponível. Reinicie a API (npm run dev --prefix server) e tente de novo."
+          : text.slice(0, 200) || res.statusText
+      );
+    }
+  }
   if (!res.ok) {
     const msg = data?.error || data?.errors?.join?.(", ") || res.statusText;
     throw new Error(msg);

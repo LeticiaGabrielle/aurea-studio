@@ -14,6 +14,10 @@ services:
       # Obrigatório para o Express servir o build do React (client/dist)
       - key: NODE_ENV
         value: production
+      # Postgres (ex.: Neon): no Render → Environment → DATABASE_URL = URI do painel Neon.
+      # Não commits credenciais; no Blueprint podes usar sync: false e preencher no primeiro deploy.
+      # - key: DATABASE_URL
+      #   sync: false
       # Opcional: pasta da base SQLite (use com Disco Render montado neste caminho)
       # - key: DATA_DIR
       #   value: /data

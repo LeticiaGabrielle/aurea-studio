@@ -1,6 +1,16 @@
-import { db, nextNumber, calcOrcamentoRow } from "../db.js";
+import { db, nextNumber } from "../db.js";
 import { mapOrcamentoRow } from "../models/orcamentoModel.js";
 import { garantirPedidoParaOrcamentoAprovado } from "../services/pedidoFromOrcamento.js";
+import {
+  ensureItensForOrcamento,
+  insertItens,
+  itensForOrcamentoRow,
+  legacyFieldsFromItens,
+  loadItensByOrcamentoIds,
+  normalizeOrcamentoItem,
+  replaceItens,
+  validateOrcamentoItens,
+} from "../services/orcamentoItens.js";
 
 const ALLOWED_STATUS = ["RASCUNHO", "ENVIADO", "APROVADO", "RECUSADO"];
 
@@ -8,6 +18,43 @@ const ORC_SELECT = `
   SELECT o.*, CASE WHEN EXISTS (SELECT 1 FROM pedidos p WHERE p."orcamentoId" = o.id) THEN 1 ELSE 0 END AS "possuiPedido"
   FROM orcamentos o
 `;
+
+function resolveItensFromBody(body) {
+  if (Array.isArray(body.itens) && body.itens.length > 0) {
+    return body.itens.map((item, i) => normalizeOrcamentoItem(item, i));
+  }
+  return [normalizeOrcamentoItem(body, 0)];
+}
+
+function mapOrcamentoWithItens(row, itensMap) {
+  const base = mapOrcamentoRow(row);
+  const itens = itensMap
+    ? itensForOrcamentoRow(row, itensMap)
+    : [];
+  return { ...base, itens };
+}
+
+async function mapOrcamentoWithItensFull(row) {
+  const base = mapOrcamentoRow(row);
+  const itens = await ensureItensForOrcamento(row);
+  return { ...base, itens };
+}
+
+function validateOrcamentoBody(body, partial) {
+  const errors = [];
+  if (!partial) {
+    if (!body.nomeCliente || !String(body.nomeCliente).trim()) {
+      errors.push("nomeCliente obrigatório");
+    }
+  }
+  if (!partial || body.itens != null) {
+    errors.push(...validateOrcamentoItens(resolveItensFromBody(body)));
+  }
+  if (body.status != null && !ALLOWED_STATUS.includes(body.status)) {
+    errors.push("status inválido");
+  }
+  return errors;
+}
 
 export async function listOrcamentos(req, res) {
   try {
@@ -19,14 +66,22 @@ export async function listOrcamentos(req, res) {
       params.push(status);
     }
     if (search && String(search).trim()) {
-      sql +=
-        " AND (o.\"nomeCliente\" LIKE ? OR o.telefone LIKE ? OR o.produto LIKE ? OR o.numero LIKE ?)";
+      sql += ` AND (
+        o."nomeCliente" LIKE ? OR o.telefone LIKE ? OR o.produto LIKE ? OR o.numero LIKE ?
+        OR EXISTS (
+          SELECT 1 FROM orcamento_itens i
+          WHERE i."orcamentoId" = o.id
+            AND (i.produto LIKE ? OR i.modelo LIKE ?)
+        )
+      )`;
       const q = `%${String(search).trim()}%`;
-      params.push(q, q, q, q);
+      params.push(q, q, q, q, q, q);
     }
     sql += " ORDER BY o.id DESC";
     const rows = await db.prepare(sql).all(...params);
-    res.json(rows.map(mapOrcamentoRow));
+    const itensMap = await loadItensByOrcamentoIds(rows.map((r) => r.id));
+    const out = rows.map((r) => mapOrcamentoWithItens(r, itensMap));
+    res.json(out);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -35,31 +90,11 @@ export async function listOrcamentos(req, res) {
 export async function getOrcamento(req, res) {
   try {
     const row = await db.prepare(`${ORC_SELECT} WHERE o.id = ?`).get(req.params.id);
-    const o = mapOrcamentoRow(row);
-    if (!o) return res.status(404).json({ error: "Orçamento não encontrado" });
-    res.json(o);
+    if (!row) return res.status(404).json({ error: "Orçamento não encontrado" });
+    res.json(await mapOrcamentoWithItensFull(row));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
-}
-
-function validateOrcamentoBody(body, partial) {
-  const errors = [];
-  if (!partial) {
-    if (!body.nomeCliente || !String(body.nomeCliente).trim()) errors.push("nomeCliente obrigatório");
-  }
-  const q = body.quantidade != null ? Number(body.quantidade) : null;
-  const vu = body.valorUnitario != null ? Number(body.valorUnitario) : null;
-  if (!partial || q != null) {
-    if (q == null || q <= 0) errors.push("quantidade deve ser maior que 0");
-  }
-  if (!partial || vu != null) {
-    if (vu == null || vu <= 0) errors.push("valorUnitario deve ser maior que 0");
-  }
-  if (body.status != null && !ALLOWED_STATUS.includes(body.status)) {
-    errors.push("status inválido");
-  }
-  return errors;
 }
 
 export async function createOrcamento(req, res) {
@@ -68,7 +103,8 @@ export async function createOrcamento(req, res) {
     const errs = validateOrcamentoBody(body, false);
     if (errs.length) return res.status(400).json({ errors: errs });
 
-    const { valorTotal, valorSinal } = calcOrcamentoRow(body);
+    const itens = resolveItensFromBody(body);
+    const legacy = legacyFieldsFromItens(itens);
     const numero = await nextNumber("ORC", "orcamento");
     const now = new Date().toISOString();
     const status = body.status && ALLOWED_STATUS.includes(body.status) ? body.status : "RASCUNHO";
@@ -77,25 +113,26 @@ export async function createOrcamento(req, res) {
       INSERT INTO orcamentos (
         numero, "nomeCliente", telefone, produto, quantidade, modelo, cores,
         personalizacao, configuracao, prazo, "valorUnitario", "valorTotal", "valorSinal",
-        observacoes, "dataCriacao", status,
+        observacoes, "dataCriacao", "dataAtualizacao", status,
         "tipoPagamento", "chavePix", "nomeRecebedor", "tipoEntrega", "observacoesEntrega"
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
     const info = await stmt.run(
       numero,
       String(body.nomeCliente || "").trim(),
       String(body.telefone || "").trim(),
-      String(body.produto || "").trim(),
-      Number(body.quantidade),
-      String(body.modelo || "").trim(),
-      String(body.cores || "").trim(),
-      String(body.personalizacao || "").trim(),
-      String(body.configuracao || "").trim(),
-      String(body.prazo || "").trim(),
-      Number(body.valorUnitario),
-      valorTotal,
-      valorSinal,
+      legacy.produto,
+      legacy.quantidade,
+      legacy.modelo,
+      legacy.cores,
+      legacy.personalizacao,
+      legacy.configuracao,
+      legacy.prazo,
+      legacy.valorUnitario,
+      legacy.valorTotal,
+      legacy.valorSinal,
       String(body.observacoes || "").trim(),
+      now,
       now,
       status,
       String(body.tipoPagamento || "").trim(),
@@ -105,9 +142,11 @@ export async function createOrcamento(req, res) {
       String(body.observacoesEntrega || "").trim()
     );
     const newId = info.lastInsertRowid;
+    await insertItens(newId, itens);
+
     const { criado, pedido } = await garantirPedidoParaOrcamentoAprovado(newId);
     const row = await db.prepare(`${ORC_SELECT} WHERE o.id = ?`).get(newId);
-    const out = mapOrcamentoRow(row);
+    const out = await mapOrcamentoWithItensFull(row);
     if (criado && pedido) {
       out.pedidoCriadoAutomaticamente = pedido;
     }
@@ -127,85 +166,72 @@ export async function updateOrcamento(req, res) {
     }
 
     const body = req.body || {};
-    const errs = validateOrcamentoBody(
-      {
-        nomeCliente: body.nomeCliente ?? existing.nomeCliente,
-        quantidade: body.quantidade ?? existing.quantidade,
-        valorUnitario: body.valorUnitario ?? existing.valorUnitario,
-        status: body.status ?? existing.status,
-      },
-      true
-    );
+    const mergedBody = {
+      ...body,
+      nomeCliente: body.nomeCliente ?? existing.nomeCliente,
+      itens:
+        body.itens ??
+        (await ensureItensForOrcamento(existing)).map((item) => ({
+          produto: item.produto,
+          quantidade: item.quantidade,
+          modelo: item.modelo,
+          cores: item.cores,
+          personalizacao: item.personalizacao,
+          configuracao: item.configuracao,
+          prazo: item.prazo,
+          valorUnitario: item.valorUnitario,
+        })),
+      status: body.status ?? existing.status,
+    };
+    const errs = validateOrcamentoBody(mergedBody, true);
     if (errs.length) return res.status(400).json({ errors: errs });
 
-    const merged = {
-      nomeCliente: body.nomeCliente !== undefined ? body.nomeCliente : existing.nomeCliente,
-      telefone: body.telefone !== undefined ? body.telefone : existing.telefone,
-      produto: body.produto !== undefined ? body.produto : existing.produto,
-      quantidade: body.quantidade !== undefined ? body.quantidade : existing.quantidade,
-      modelo: body.modelo !== undefined ? body.modelo : existing.modelo,
-      cores: body.cores !== undefined ? body.cores : existing.cores,
-      personalizacao: body.personalizacao !== undefined ? body.personalizacao : existing.personalizacao,
-      configuracao: body.configuracao !== undefined ? body.configuracao : existing.configuracao,
-      prazo: body.prazo !== undefined ? body.prazo : existing.prazo,
-      valorUnitario: body.valorUnitario !== undefined ? body.valorUnitario : existing.valorUnitario,
-      observacoes: body.observacoes !== undefined ? body.observacoes : existing.observacoes,
-      status: body.status !== undefined ? body.status : existing.status,
-      tipoPagamento:
-        body.tipoPagamento !== undefined ? body.tipoPagamento : existing.tipoPagamento ?? "",
-      chavePix: body.chavePix !== undefined ? body.chavePix : existing.chavePix ?? "",
-      nomeRecebedor:
-        body.nomeRecebedor !== undefined ? body.nomeRecebedor : existing.nomeRecebedor ?? "",
-      tipoEntrega: body.tipoEntrega !== undefined ? body.tipoEntrega : existing.tipoEntrega ?? "",
-      observacoesEntrega:
-        body.observacoesEntrega !== undefined
-          ? body.observacoesEntrega
-          : existing.observacoesEntrega ?? "",
-    };
-    if (merged.status && !ALLOWED_STATUS.includes(merged.status)) {
-      return res.status(400).json({ error: "status inválido" });
-    }
-
-    const { valorTotal, valorSinal } = calcOrcamentoRow({
-      quantidade: merged.quantidade,
-      valorUnitario: merged.valorUnitario,
-    });
+    const itens = resolveItensFromBody(mergedBody);
+    const legacy = legacyFieldsFromItens(itens);
+    const now = new Date().toISOString();
 
     await db
       .prepare(`
       UPDATE orcamentos SET
         "nomeCliente" = ?, telefone = ?, produto = ?, quantidade = ?, modelo = ?, cores = ?,
         personalizacao = ?, configuracao = ?, prazo = ?, "valorUnitario" = ?, "valorTotal" = ?, "valorSinal" = ?,
-        observacoes = ?, status = ?,
+        observacoes = ?, status = ?, "dataAtualizacao" = ?,
         "tipoPagamento" = ?, "chavePix" = ?, "nomeRecebedor" = ?, "tipoEntrega" = ?, "observacoesEntrega" = ?
       WHERE id = ?
     `)
       .run(
-        String(merged.nomeCliente || "").trim(),
-        String(merged.telefone || "").trim(),
-        String(merged.produto || "").trim(),
-        Number(merged.quantidade),
-        String(merged.modelo || "").trim(),
-        String(merged.cores || "").trim(),
-        String(merged.personalizacao || "").trim(),
-        String(merged.configuracao || "").trim(),
-        String(merged.prazo || "").trim(),
-        Number(merged.valorUnitario),
-        valorTotal,
-        valorSinal,
-        String(merged.observacoes || "").trim(),
-        merged.status,
-        String(merged.tipoPagamento || "").trim(),
-        String(merged.chavePix || "").trim(),
-        String(merged.nomeRecebedor || "").trim(),
-        String(merged.tipoEntrega || "").trim(),
-        String(merged.observacoesEntrega || "").trim(),
+        String(mergedBody.nomeCliente || "").trim(),
+        String(body.telefone !== undefined ? body.telefone : existing.telefone ?? "").trim(),
+        legacy.produto,
+        legacy.quantidade,
+        legacy.modelo,
+        legacy.cores,
+        legacy.personalizacao,
+        legacy.configuracao,
+        legacy.prazo,
+        legacy.valorUnitario,
+        legacy.valorTotal,
+        legacy.valorSinal,
+        String(body.observacoes !== undefined ? body.observacoes : existing.observacoes ?? "").trim(),
+        mergedBody.status,
+        now,
+        String(body.tipoPagamento !== undefined ? body.tipoPagamento : existing.tipoPagamento ?? "").trim(),
+        String(body.chavePix !== undefined ? body.chavePix : existing.chavePix ?? "").trim(),
+        String(body.nomeRecebedor !== undefined ? body.nomeRecebedor : existing.nomeRecebedor ?? "").trim(),
+        String(body.tipoEntrega !== undefined ? body.tipoEntrega : existing.tipoEntrega ?? "").trim(),
+        String(
+          body.observacoesEntrega !== undefined
+            ? body.observacoesEntrega
+            : existing.observacoesEntrega ?? ""
+        ).trim(),
         id
       );
 
+    await replaceItens(id, itens);
+
     const { criado, pedido } = await garantirPedidoParaOrcamentoAprovado(id);
     const row = await db.prepare(`${ORC_SELECT} WHERE o.id = ?`).get(id);
-    const out = mapOrcamentoRow(row);
+    const out = await mapOrcamentoWithItensFull(row);
     if (criado && pedido) {
       out.pedidoCriadoAutomaticamente = pedido;
     }
@@ -224,6 +250,7 @@ export async function deleteOrcamento(req, res) {
     if (pedido) {
       return res.status(400).json({ error: "Não é possível excluir: já existe pedido vinculado" });
     }
+    await db.prepare('DELETE FROM orcamento_itens WHERE "orcamentoId" = ?').run(id);
     await db.prepare("DELETE FROM orcamentos WHERE id = ?").run(id);
     res.status(204).send();
   } catch (e) {

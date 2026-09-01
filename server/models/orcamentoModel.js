@@ -17,6 +17,7 @@ export function mapOrcamentoRow(row) {
     valorSinal: row.valorSinal,
     observacoes: row.observacoes,
     dataCriacao: row.dataCriacao,
+    dataAtualizacao: row.dataAtualizacao ?? row.dataCriacao,
     status: row.status,
     tipoPagamento: row.tipoPagamento ?? "",
     chavePix: row.chavePix ?? "",

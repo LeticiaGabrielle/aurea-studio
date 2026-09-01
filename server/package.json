@@ -10,6 +10,7 @@
   "dependencies": {
     "aurea-studio-gestao": "file:..",
     "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
     "express": "^4.21.2",
     "pg": "^8.13.1",
     "sql.js": "^1.11.0"

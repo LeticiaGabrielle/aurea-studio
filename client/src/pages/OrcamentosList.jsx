@@ -124,7 +124,7 @@ export default function OrcamentosList() {
                 <th className="px-4 py-3">Produto</th>
                 <th className="px-4 py-3">Total</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Criado</th>
+                <th className="px-4 py-3">Atualizado</th>
                 <th className="px-4 py-3 text-right">Ações</th>
               </tr>
             </thead>
@@ -141,7 +141,9 @@ export default function OrcamentosList() {
                   <td className="px-4 py-3">
                     <StatusBadge status={o.status} />
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{formatDate(o.dataCriacao)}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {formatDate(o.dataAtualizacao ?? o.dataCriacao)}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex flex-wrap justify-end gap-2">
                       {o.status === "APROVADO" && !o.possuiPedido && (

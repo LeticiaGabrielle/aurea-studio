@@ -1,5 +1,10 @@
 import { db, nextNumber, calcPedidoLucro } from "../db.js";
 import { mapPedidoRow } from "../models/pedidoModel.js";
+import {
+  ensureItensForOrcamento,
+  formatItensDetalhePedido,
+  formatItensResumoPedido,
+} from "../services/orcamentoItens.js";
 
 /**
  * Cria pedido a partir de orçamento aprovado, se ainda não existir.
@@ -15,6 +20,12 @@ export async function garantirPedidoParaOrcamentoAprovado(orcamentoId) {
   if (existente) {
     return { criado: false, pedido: mapPedidoRow(existente) };
   }
+
+  const itens = await ensureItensForOrcamento(o);
+  const produto = formatItensResumoPedido(itens) || o.produto;
+  const detalheItens = formatItensDetalhePedido(itens);
+  const observacoes = [o.observacoes, detalheItens].filter(Boolean).join("\n\n");
+  const first = itens[0];
 
   const numero = await nextNumber("PED", "pedido");
   const now = new Date().toISOString();
@@ -36,13 +47,13 @@ export async function garantirPedidoParaOrcamentoAprovado(orcamentoId) {
     id,
     o.nomeCliente,
     o.telefone,
-    o.produto,
-    o.quantidade,
-    o.modelo,
-    o.cores,
-    o.personalizacao,
-    o.configuracao,
-    o.prazo,
+    produto,
+    itens.reduce((s, item) => s + Number(item.quantidade), 0),
+    first?.modelo ?? o.modelo,
+    first?.cores ?? o.cores,
+    first?.personalizacao ?? o.personalizacao,
+    first?.configuracao ?? o.configuracao,
+    first?.prazo ?? o.prazo,
     valorTotal,
     valorSinal,
     0,
@@ -54,7 +65,7 @@ export async function garantirPedidoParaOrcamentoAprovado(orcamentoId) {
     String(o.nomeRecebedor ?? "").trim(),
     String(o.tipoEntrega ?? "").trim(),
     String(o.observacoesEntrega ?? "").trim(),
-    o.observacoes,
+    observacoes,
     "A_COBRAR",
     now,
     now

@@ -122,12 +122,28 @@ CREATE TABLE IF NOT EXISTS orcamentos (
   "valorSinal" DOUBLE PRECISION NOT NULL DEFAULT 0,
   observacoes TEXT NOT NULL DEFAULT '',
   "dataCriacao" TEXT NOT NULL,
+  "dataAtualizacao" TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'RASCUNHO',
   "tipoPagamento" TEXT NOT NULL DEFAULT '',
   "chavePix" TEXT NOT NULL DEFAULT '',
   "nomeRecebedor" TEXT NOT NULL DEFAULT '',
   "tipoEntrega" TEXT NOT NULL DEFAULT '',
   "observacoesEntrega" TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS orcamento_itens (
+  id SERIAL PRIMARY KEY,
+  "orcamentoId" INTEGER NOT NULL REFERENCES orcamentos(id) ON DELETE CASCADE,
+  ordem INTEGER NOT NULL DEFAULT 0,
+  produto TEXT NOT NULL DEFAULT '',
+  quantidade DOUBLE PRECISION NOT NULL DEFAULT 1,
+  modelo TEXT NOT NULL DEFAULT '',
+  cores TEXT NOT NULL DEFAULT '',
+  personalizacao TEXT NOT NULL DEFAULT '',
+  configuracao TEXT NOT NULL DEFAULT '',
+  prazo TEXT NOT NULL DEFAULT '',
+  "valorUnitario" DOUBLE PRECISION NOT NULL DEFAULT 0,
+  "valorTotal" DOUBLE PRECISION NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS pedidos (
@@ -184,6 +200,36 @@ async function ensureOrcamentosPdfExtras() {
   }
 }
 
+async function ensureOrcamentosDataAtualizacao() {
+  try {
+    await pool.query(
+      `ALTER TABLE orcamentos ADD COLUMN "dataAtualizacao" TEXT NOT NULL DEFAULT ''`
+    );
+  } catch (e) {
+    if (e.code !== "42701") throw e;
+  }
+  await pool.query(
+    `UPDATE orcamentos SET "dataAtualizacao" = "dataCriacao" WHERE "dataAtualizacao" = '' OR "dataAtualizacao" IS NULL`
+  );
+}
+
+async function migrateLegacyOrcamentoItens() {
+  await pool.query(`
+    INSERT INTO orcamento_itens (
+      "orcamentoId", ordem, produto, quantidade, modelo, cores,
+      personalizacao, configuracao, prazo, "valorUnitario", "valorTotal"
+    )
+    SELECT
+      o.id, 0, o.produto, o.quantidade, o.modelo, o.cores,
+      o.personalizacao, o.configuracao, o.prazo, o."valorUnitario", o."valorTotal"
+    FROM orcamentos o
+    WHERE o.produto <> ''
+      AND NOT EXISTS (
+        SELECT 1 FROM orcamento_itens i WHERE i."orcamentoId" = o.id
+      )
+  `);
+}
+
 export async function initPg() {
   const conn = process.env.DATABASE_URL;
   if (!conn) throw new Error("DATABASE_URL em falta");
@@ -201,6 +247,8 @@ export async function initPg() {
   await pool.query(DDL);
   await ensurePedidosRegistroPagamento();
   await ensureOrcamentosPdfExtras();
+  await ensureOrcamentosDataAtualizacao();
+  await migrateLegacyOrcamentoItens();
 
   console.log("[db] PostgreSQL (DATABASE_URL) — dados persistem entre deploys.");
 }

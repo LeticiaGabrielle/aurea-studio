@@ -1,12 +1,12 @@
 # Aurea Studio — Gestão de orçamentos e pedidos
 
-Sistema web para empresa de produtos personalizados (impressão 3D, NFC, etc.): **orçamentos** e **pedidos** separados, com API REST e interface React. O servidor usa **SQLite** (ficheiro local) por omissão ou **PostgreSQL** quando existe `DATABASE_URL` (recomendado no Render para os dados não sumirem).
+Sistema web para empresa de produtos personalizados (impressão 3D, NFC, etc.): **orçamentos** e **pedidos** separados, com API REST e interface React. O servidor usa **SQLite** (ficheiro local) por omissão ou **PostgreSQL** quando existe `DATABASE_URL` (recomendado: **[Neon](https://neon.tech)** ou Postgres estável — evita perder dados quando o disco do contentor ou o Postgres gratuito do Render deixa de estar disponível).
 
 ## Stack
 
 - **Frontend:** React (Vite) + Tailwind CSS
 - **Backend:** Node.js + Express
-- **Banco:** SQLite (`sql.js`) por omissão; **PostgreSQL** (`pg`) se definires `DATABASE_URL` (persistência real em hosting efémero)
+- **Banco:** SQLite (`sql.js`) por omissão; **PostgreSQL** (`pg`) com `DATABASE_URL` — em produção no Render usa **Neon** ou outro Postgres gerido (persistência estável).
 - **PDF:** `html2pdf.js` no navegador (a partir do preview do orçamento)
 
 ## Estrutura
@@ -103,7 +103,7 @@ Um único **Web Service** serve a API e o React compilado. O browser usa URLs **
 | `PORT` | Não mexer | *(Render preenche)* | O Render injeta a porta; o `server` já usa `process.env.PORT`. |
 | `VITE_API_URL` | Não | *(vazio / não criar)* | Só para monólito: o build do Vite fica com `""` e o `fetch` usa o mesmo host. |
 | `DATA_DIR` ou `SQLITE_PATH` | Opcional | ex. `/data` | Só SQLite: com **Persistent Disk** montado; ver abaixo. |
-| `DATABASE_URL` | **Recomendado no Render** | *(URL interna do Postgres)* | Com **PostgreSQL** no Render (ou Neon, etc.): os dados **persistem** entre deploys. Se existir, o servidor **ignora** o ficheiro SQLite. |
+| `DATABASE_URL` | **Recomendado em produção** | URI do **[Neon](https://neon.tech)** ou Postgres no Render | Os dados **persistem** entre deploys. Se existir, o servidor **ignora** o ficheiro SQLite. Ver secção *PostgreSQL no Neon* abaixo. |
 | `DATABASE_SSL` | Opcional | `false` | Postgres local sem SSL (ex. Docker em `localhost`). |
 | `CORS_ORIGIN` | Opcional | URL do site | Só se o front estiver noutro domínio; no deploy único pode omitir. |
 
@@ -146,9 +146,25 @@ Um único **Web Service** serve a API e o React compilado. O browser usa URLs **
 - **Auto Deploy:** Settings → *Auto-Deploy* → **Yes** (deploy a cada push na branch).
 - O primeiro arranque no plano gratuito pode demorar (~1 min) após inatividade (*cold start*).
 
-### Persistência no Render (orçamentos que não somem)
+### PostgreSQL no Neon (recomendado se o Postgres do Render sumiu)
 
-**Recomendado:** cria uma base **PostgreSQL** no Render (**New** → **PostgreSQL**), espera ficar disponível e, no **Web Service** da app, em **Environment** → **Add** → cola a variável **`DATABASE_URL`** com o valor que o Render mostra (ligações *Internal Database URL* ao mesmo serviço/rede). Volta a fazer **deploy** da app. O endpoint `GET /api/health` devolve `"db": "postgresql"` quando está ativo.
+O Postgres **gratuito do Render** pode ser suspenso ou apagado por inatividade. O **[Neon](https://neon.tech)** é Postgres na nuvem com URL estável: ligas o **mesmo Web Service** no Render e só mudas a variável de ambiente.
+
+1. **Neon:** regista-te → **Create project** → escolhe região (ex. próxima dos utilizadores ou de `Frankfurt` se o Render estiver na Europa).
+2. **Connection string:** no painel Neon → **Dashboard** do projeto → **Connect** → copia a URI **`postgresql://...`** (podes usar a connection **com pooling** se o Neon mostrar duas opções; para um processo Node no Render, qualquer das duas costuma funcionar).
+3. **Render:** no teu **Web Service** → **Environment** → **Add Environment Variable**:
+   - **`DATABASE_URL`** = cola a URI completa do Neon (inclui `?sslmode=require` ou equivalente).
+   - **Não** defines `DATABASE_SSL` = `false` em produção com Neon (o servidor usa TLS automaticamente quando o host **não** é `localhost`).
+4. **Guardar** e fazer **Manual Deploy** (ou esperar pelo próximo deploy). No primeiro arranque, o servidor executa `CREATE TABLE IF NOT EXISTS` e migrações leves em `server/db-pg.js` — esquema novo fica criado sozinho.
+5. Confirma em `GET /api/health`: o JSON deve ter `"db": "postgresql"`.
+
+**Testar no PC:** copia `server/.env.example` para `server/.env`, cola a mesma `DATABASE_URL` do Neon e corre `npm run dev --prefix server`.
+
+**Dados antigos do Render:** se ainda tiveres acesso ao Postgres antigo (ou um ficheiro `.sql` / `.dump` de backup), podes restaurar com `pg_restore` / `psql` para a base Neon antes de apontar a app. Se a instância já foi apagada sem backup, só consegues recomeçar com base vazia no Neon.
+
+### Persistência no Render (Postgres no próprio Render)
+
+**Alternativa:** cria uma base **PostgreSQL** no Render (**New** → **PostgreSQL**), espera ficar disponível e, no **Web Service** da app, em **Environment** → **Add** → cola **`DATABASE_URL`** com o valor que o Render mostra (*Internal Database URL* na mesma conta). Volta a fazer **deploy** da app. O endpoint `GET /api/health` devolve `"db": "postgresql"` quando está ativo.
 
 **Alternativa:** SQLite com disco persistente (abaixo) — costuma exigir plano pago no Render.
 
